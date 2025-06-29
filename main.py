@@ -1,7 +1,7 @@
 # main.py
 import sys
 from PySide6.QtWidgets import QApplication
-from TrackViewer import MainWindow # Importamos nuestra ventana principal
+from TrackAnalizer import MainWindow # Importamos nuestra ventana principal
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
