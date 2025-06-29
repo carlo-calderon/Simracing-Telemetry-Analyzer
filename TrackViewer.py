@@ -2,7 +2,7 @@
 import sys
 import numpy as np
 import os
-from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMenuBar)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMenuBar, QToolBar, QComboBox)
 from PySide6.QtWidgets import QProgressDialog
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtGui import QAction, QColor
@@ -30,14 +30,16 @@ class TrackWidget(QOpenGLWidget):
         self.zoom = 1.0
         self._last_mouse_pos = None
 
-    def setData(self, dataframe):
+    def setData(self, dataframe, color_column='Speed'):
         """
         Recibe el DataFrame, lo procesa y prepara los datos para OpenGL.
+        color_column: columna a usar para colorear los puntos.
         """
         if dataframe is None or dataframe.empty or 'Lon' not in dataframe.columns or 'Lat' not in dataframe.columns:
             return
 
         self.dataframe = dataframe
+        self.color_column = color_column
 
         # 1. Extraer coordenadas y calcular el bounding box (caja contenedora) de la pista
         lon = self.dataframe['Lon'].to_numpy()
@@ -51,14 +53,15 @@ class TrackWidget(QOpenGLWidget):
         # Usamos Lon para X y Lat para Y.
         self.vertices = np.vstack((lon, lat)).T.flatten()
 
-        # 3. Mapear la velocidad a un color
-        speed = self.dataframe['Speed'].to_numpy()
-        # Normalizamos la velocidad (0.0 a 1.0) para poder aplicarle un mapa de color
-        norm_speed = (speed - speed.min()) / (speed.max() - speed.min())
-        
-        # Usamos el mapa de colores "RdYlGn". Rojo=lento, Amarillo=medio, Verde=rápido.
-        # Obtenemos un array de colores RGBA (Rojo, Verde, Azul, Alpha)
-        self.colors = cm.RdYlGn(norm_speed)
+        # 3. Mapear la columna seleccionada a un color
+        if color_column in self.dataframe.columns:
+            values = self.dataframe[color_column].to_numpy()
+            # Normalizamos la columna (0.0 a 1.0) para poder aplicarle un mapa de color
+            norm_values = (values - values.min()) / (values.max() - values.min()) if values.max() > values.min() else np.zeros_like(values)
+            self.colors = cm.RdYlGn(norm_values)
+        else:
+            # Fallback: todo gris
+            self.colors = np.ones((len(self.dataframe), 4)) * 0.5
 
         self.update() # Le decimos al widget que necesita redibujarse
 
@@ -220,6 +223,10 @@ class TrackWidget(QOpenGLWidget):
 
         self.update()
 
+    def update_colors(self, color_column):
+        """Actualiza los colores según la columna seleccionada."""
+        if self.dataframe is not None:
+            self.setData(self.dataframe, color_column)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -230,6 +237,16 @@ class MainWindow(QMainWindow):
         # Creamos nuestro widget de OpenGL y lo ponemos como widget central
         self.track_widget = TrackWidget(self)
         self.setCentralWidget(self.track_widget)
+
+        # Barra de herramientas
+        self.toolbar = QToolBar("Herramientas", self)
+        self.addToolBar(self.toolbar)
+
+        # ComboBox para seleccionar la columna de color
+        self.color_combo = QComboBox(self)
+        self.color_combo.setToolTip("Columna para colorear los puntos")
+        self.color_combo.currentTextChanged.connect(self.on_color_column_changed)
+        self.toolbar.addWidget(self.color_combo)
 
         # Configuración para archivos recientes
         self.settings = QSettings("MiEmpresa", "SimracingTelemetryAnalyzer")
@@ -276,7 +293,15 @@ class MainWindow(QMainWindow):
             session = TelemetrySession(file_name)
             if not session.dataframe.empty:
                 session.filter_driving_columns()
-                self.track_widget.setData(session.dataframe)
+                # Llenar el combo con columnas numéricas
+                numeric_cols = session.dataframe.select_dtypes(include=[np.number]).columns.tolist()
+                self.color_combo.clear()
+                self.color_combo.addItems(numeric_cols)
+                # Seleccionar 'Speed' si existe
+                if 'Speed' in numeric_cols:
+                    self.color_combo.setCurrentText('Speed')
+                # Pasar la columna seleccionada al widget
+                self.track_widget.setData(session.dataframe, self.color_combo.currentText())
                 self.add_to_recent_files(file_name)
             else:
                 print("Error: No se cargaron datos de telemetría.")
@@ -312,3 +337,7 @@ class MainWindow(QMainWindow):
         action = self.sender()
         if action:
             self.load_file(action.data())
+
+    def on_color_column_changed(self, column_name):
+        """Callback cuando el usuario cambia la columna de color."""
+        self.track_widget.update_colors(column_name)
