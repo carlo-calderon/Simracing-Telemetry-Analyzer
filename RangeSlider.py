@@ -9,90 +9,102 @@ class QRangeSlider(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(250, 60) # Aumentamos la altura mínima para dar espacio a las etiquetas
+        self.setMinimumSize(250, 60)
         self.setMouseTracking(True)
         self._min_val, self._max_val = 0.0, 1.0
         self._low_val, self._high_val = 0.0, 1.0
         self._dragged_handle = None
-
-        # --- Nuevas variables de estilo ---
         self.handle_diameter = 16
-        self.margin = self.handle_diameter // 2 # Margen para que los handles no se salgan
-
+        self.margin = self.handle_diameter // 2
         self.colormap = None
-        self._colormap_cache = None
+        
+        # Nuevos atributos para los colores de los extremos
+        self._min_edge_color = QColor(80, 80, 90)
+        self._max_edge_color = QColor(80, 80, 90)
 
-    # --- Los métodos setColormap, setRange, y setValues no cambian ---
     def setColormap(self, colormap):
         self.colormap = colormap
-        self._colormap_cache = None
         self.update()
 
     def setRange(self, min_val, max_val):
         self._min_val = min_val
         self._max_val = max_val if max_val > min_val else min_val + 1.0
-        self._colormap_cache = None
         self.update()
 
     def setValues(self, low, high):
         self._low_val = low
         self._high_val = high
         self.update()
+        
+    def set_edge_colors(self, min_color: QColor, max_color: QColor):
+        """ Recibe los colores para pintar los extremos fuera de rango. """
+        self._min_edge_color = min_color
+        self._max_edge_color = max_color
+        self.update()
 
-    # --- Las funciones de conversión ahora consideran el margen ---
     def _pos_to_val(self, pos):
+        # (Sin cambios en esta función)
         effective_width = self.width() - 2 * self.margin
         if effective_width <= 0: return self._min_val
-        
         clamped_pos = max(self.margin, min(pos, self.width() - self.margin))
         pos_fraction = (clamped_pos - self.margin) / effective_width
-        
         return self._min_val + pos_fraction * (self._max_val - self._min_val)
 
     def _val_to_pos(self, val):
         full_range = self._max_val - self._min_val
         if full_range <= 0:
+            # Si no hay rango, pon los manejadores en los extremos
             return self.margin if val <= self._min_val else self.width() - self.margin
         
+        # Ancho efectivo de la barra, descontando los márgenes de los lados
         effective_width = self.width() - 2 * self.margin
-        val_fraction = (val - self._min_val) / full_range
         
+        # Asegurarnos de que el valor esté dentro del rango para evitar errores
+        clamped_val = max(self._min_val, min(val, self._max_val))
+        
+        # Calculamos la fracción (0.0 a 1.0) que representa el valor dentro del rango total
+        val_fraction = (clamped_val - self._min_val) / full_range
+        
+        # La posición final es el margen izquierdo más la fracción del ancho efectivo
         return self.margin + val_fraction * effective_width
 
-    # --- El nuevo y rediseñado paintEvent ---
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Geometría de la barra (ahora más delgada)
         bar_height = 8
         bar_y = self.height() // 2 - bar_height // 2
-        bar_rect = QRect(self.margin, bar_y, self.width() - 2 * self.margin, bar_height)
         
         low_pos = self._val_to_pos(self._low_val)
         high_pos = self._val_to_pos(self._high_val)
 
-        # 1. Dibuja la barra de fondo gris.
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(80, 80, 90))
-        painter.drawRect(bar_rect)
+        # --- Lógica de Dibujado Final ---
 
-        # 2. Dibuja el gradiente de color en la sección seleccionada.
+        # 1. Dibuja la parte izquierda (fuera de rango) con su color atenuado
+        left_rect = QRect(self.margin, bar_y, int(low_pos) - self.margin, bar_height)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self._min_edge_color)
+        painter.drawRect(left_rect)
+        
+        # 2. Dibuja la parte derecha (fuera de rango) con su color atenuado
+        right_rect = QRect(int(high_pos), bar_y, self.width() - self.margin - int(high_pos), bar_height)
+        painter.setBrush(self._max_edge_color)
+        painter.drawRect(right_rect)
+
+        # 3. Dibuja el gradiente dinámico en la sección seleccionada
         if self.colormap:
             selection_width = int(high_pos - low_pos)
             if selection_width > 0:
                 arr = np.linspace(0, 1, selection_width)
                 colors = (self.colormap(arr)[:, :3] * 255).astype(np.uint8)
                 qimg = QImage(colors.data, selection_width, 1, 3 * selection_width, QImage.Format_RGB888)
-                
                 dest_rect = QRect(int(low_pos), bar_y, selection_width, bar_height)
-                # Escalar la pequeña imagen del gradiente para que llene el alto de la barra
                 painter.drawImage(dest_rect, qimg.scaled(selection_width, bar_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
         
-        # 4. Dibuja los manejadores esféricos (handles)
+        # El resto del dibujado (handles, etiquetas) no cambia
+        # ... (pega aquí el resto de tu paintEvent para las etiquetas y los handles)
         handle_radius = self.handle_diameter / 2
         for pos in [low_pos, high_pos]:
-            # Creamos un gradiente radial para el efecto de esfera
             gradient = QRadialGradient(QPointF(pos, self.height() // 2), handle_radius)
             gradient.setColorAt(0, QColor(255, 255, 255))
             gradient.setColorAt(1, QColor(200, 200, 210))
@@ -100,7 +112,6 @@ class QRangeSlider(QWidget):
             painter.setPen(QPen(QColor(50,50,50), 1))
             painter.drawEllipse(QPointF(pos, self.height() // 2), handle_radius, handle_radius)
 
-        # 5. Dibuja las etiquetas de valor sobre los manejadores (los "tooltips")
         font = self.font()
         font.setPointSize(8)
         font.setBold(True)
@@ -111,44 +122,35 @@ class QRangeSlider(QWidget):
             metrics = painter.fontMetrics()
             text_rect = metrics.boundingRect(text)
             
-            # Posición de la "burbuja" con menos margen
             bubble_w = text_rect.width() + 6
             bubble_h = text_rect.height() + 2
             bubble_x = pos - bubble_w / 2
-            bubble_y = bar_y - bubble_h - 5 # 5 píxeles por encima de la barra
+            bubble_y = bar_y - bubble_h - 5
 
-            # Ajustar la posición X de la burbuja para que no se salga de los bordes del widget
             bubble_x = max(0, min(bubble_x, self.width() - bubble_w))
             bubble_rect = QRect(int(bubble_x), int(bubble_y), bubble_w, bubble_h)
             
-            # Color dinámico del texto
             if self.colormap:
                 full_range = self._max_val - self._min_val
                 norm_val = (val - self._min_val) / full_range if full_range > 0 else 0
                 color_val = QColor.fromRgbF(*self.colormap(norm_val))
-                # Hacemos el color más oscuro para que contraste con el fondo claro
                 text_color = color_val.darker(150)
             else:
                 text_color = self.palette().color(QPalette.Text)
             
-            # Dibuja la burbuja y el texto
             painter.setBrush(QColor(240, 240, 240))
             painter.setPen(QPen(QColor(150,150,150), 1))
             painter.drawRoundedRect(bubble_rect, 5, 5)
             painter.setPen(text_color)
             painter.drawText(bubble_rect, Qt.AlignCenter, text)
 
-        # 6. Dibuja las etiquetas de los extremos (Min y Max) en la parte inferior
         font.setPointSize(8)
         font.setBold(False)
         painter.setFont(font)
         metrics = painter.fontMetrics()
-
-        # Preparar la brocha y la pluma para las burbujas de los extremos
         painter.setBrush(QColor(240, 240, 240))
         painter.setPen(QPen(QColor(150,150,150), 1))
 
-        # Etiqueta Min
         min_text = f"{self._min_val:.2f}"
         min_text_rect = metrics.boundingRect(min_text)
         min_bubble_w = min_text_rect.width() + 8
@@ -156,7 +158,6 @@ class QRangeSlider(QWidget):
         min_bubble_rect = QRect(0, self.height() - min_bubble_h, min_bubble_w, min_bubble_h)
         painter.drawRoundedRect(min_bubble_rect, 4, 4)
 
-        # Etiqueta Max
         max_text = f"{self._max_val:.2f}"
         max_text_rect = metrics.boundingRect(max_text)
         max_bubble_w = max_text_rect.width() + 8
@@ -168,7 +169,9 @@ class QRangeSlider(QWidget):
         painter.drawText(min_bubble_rect, Qt.AlignCenter, min_text)
         painter.drawText(max_bubble_rect, Qt.AlignCenter, max_text)
 
-    # --- El resto de los métodos de eventos del ratón no necesitan cambios ---
+
+    # --- El resto de métodos no necesitan cambios ---
+    # ... (pega aquí el resto de tus métodos: mousePress, mouseMove, mouseRelease, leaveEvent)
     def mousePressEvent(self, event):
         low_pos = self._val_to_pos(self._low_val)
         high_pos = self._val_to_pos(self._high_val)
@@ -190,7 +193,6 @@ class QRangeSlider(QWidget):
             self.rangeChanged.emit(self._low_val, self._high_val)
             self.update()
         
-        # Tooltip con el valor actual bajo el cursor
         val = self._pos_to_val(event.pos().x())
         QToolTip.showText(event.globalPos(), f"{val:.2f}", self)
 

@@ -285,4 +285,10 @@ class TrackWidget(QOpenGLWidget):
                 glDeleteTextures(1, [self.map_texture_id])
                 self.map_texture_id = None
 
-        # Pedimos que se redibuje la escena con (o sin) el nuevo fondo.
+    def get_view_state(self):
+        return self.pan_x, self.pan_y, self.zoom
+
+    def set_view_state(self, pan_x, pan_y, zoom):
+        self.pan_x = pan_x
+        self.pan_y = pan_y
+        self.zoom = zoom

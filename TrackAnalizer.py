@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar, QStyle)
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QColor
 from PySide6.QtCore import Qt, QSettings
 from matplotlib import cm
 import requests
@@ -222,6 +222,8 @@ class MainWindow(QMainWindow):
             return {'min_lon': lon.min(), 'max_lon': lon.max(), 'min_lat': lat.min(), 'max_lat': lat.max()}
         return None
 
+# En TrackAnalizer.py, reemplaza la función process_and_update_track
+
     def process_and_update_track(self):
         """
         Procesa el dataframe actual basado en los controles de la UI y envía los datos al TrackWidget.
@@ -229,39 +231,63 @@ class MainWindow(QMainWindow):
         df = self.dataframe
         column_name = self.color_combo.currentText()
         if df is None or df.empty or not column_name:
-            self.track_widget.setData(None, None, None)
+            # Asegúrate de que setData puede manejar 4 Nones si es necesario
+            self.track_widget.setData(None, None, None, None) 
             return
 
-        # Obtener el rango del slider
         vmin = self.range_slider._low_val
         vmax = self.range_slider._high_val
+        
+        pan_x, pan_y, zoom = self.track_widget.get_view_state()
 
-        # Guardar zoom y paneo actuales
-        pan_x = self.track_widget.pan_x
-        pan_y = self.track_widget.pan_y
-        zoom = self.track_widget.zoom
-
-        # 1. Preparar vértices y bounding box
+        # 1. Preparar vértices y bounding box (esto está bien)
         lon = df['Lon'].to_numpy()
         lat = df['Lat'].to_numpy()
         vertices = np.vstack((lon, lat)).T.flatten()
         track_bbox = {'min_lon': lon.min(), 'max_lon': lon.max(), 'min_lat': lat.min(), 'max_lat': lat.max()}
 
-        # 2. Preparar colores
+        # 2. --- LÓGICA DE COLORES DINÁMICA (VERSIÓN CORREGIDA) ---
         values = df[column_name].to_numpy()
-        norm_values = (values - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(values)
-        norm_values = np.clip(norm_values, 0, 1)
-        colors = cm.RdYlGn(norm_values)
+        colormap = self.range_slider.colormap
 
-        # 3. No descargues el fondo aquí, solo pásalo si está activo
+        # a. Normalizar los valores que están DENTRO del rango para aplicar el gradiente
+        range_width = vmax - vmin if vmax > vmin else 1.0
+        norm_values = (values - vmin) / range_width
+        
+        # b. Aplicamos el colormap a TODOS los valores normalizados. Los que están fuera del
+        #    rango [0, 1] serán "fijados" a los colores de los extremos por ahora.
+        colors = colormap(np.clip(norm_values, 0, 1))
+
+        # c. Calculamos los colores atenuados para los extremos (la lógica que faltaba)
+        min_palette_color = np.array(colormap(0.0))  # Color para el valor mínimo (rojo)
+        max_palette_color = np.array(colormap(1.0))  # Color para el valor máximo (verde)
+        black_color = np.array([0.0, 0.0, 0.0, 1.0]) # RGBA para el color negro
+
+        # Fórmula: (2 * negro + color_paleta) / 3
+        dark_min_color = (2 * black_color + min_palette_color) / 3
+        dark_max_color = (2 * black_color + max_palette_color) / 3
+        
+        # d. Usamos "máscaras" para encontrar los puntos fuera de rango y aplicarles el color oscuro
+        low_mask = values < vmin
+        high_mask = values > vmax
+        
+        colors[low_mask] = dark_min_color
+        colors[high_mask] = dark_max_color
+        # --- FIN DE LA LÓGICA DE COLORES ---
+
+        # 3. Actualizar el fondo del Range Slider
+        # Convertimos los colores numpy a QColor para el slider
+        min_qcolor = QColor.fromRgbF(*dark_min_color)
+        max_qcolor = QColor.fromRgbF(*dark_max_color)
+        self.range_slider.set_edge_colors(min_qcolor, max_qcolor)
+
+        # 4. Enviar datos al TrackWidget
         map_image = self.map_image_cache if self.show_map_action.isChecked() else None
         self.track_widget.setData(vertices, colors, track_bbox, map_image)
 
-        # Restaurar zoom y paneo
-        self.track_widget.pan_x = pan_x
-        self.track_widget.pan_y = pan_y
-        self.track_widget.zoom = zoom
-        self.track_widget.update()
+        # 5. Restaurar vista
+        self.track_widget.set_view_state(pan_x, pan_y, zoom)
+        self.track_widget.update() # Forzar un redibujado explícito
 
     def deg2num(self, lat_deg, lon_deg, zoom):
         """ Convierte coordenadas geográficas a coordenadas de tesela de Google. """
