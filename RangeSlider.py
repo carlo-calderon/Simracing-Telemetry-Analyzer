@@ -1,51 +1,52 @@
+# RangeSlider.py
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QPalette, QImage
 from PySide6.QtCore import Qt, Signal, QPoint, QRect
 import numpy as np
 
 class QRangeSlider(QWidget):
-    """
-    Un widget de slider con dos manejadores para seleccionar un rango.
-    Ahora puede mostrar una paleta de colores como fondo.
-    """
     rangeChanged = Signal(float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(200, 25)
+        self.setMouseTracking(True)
         self._min_val, self._max_val = 0.0, 1.0
         self._low_val, self._high_val = 0.0, 1.0
-
-        self._dragged_handle = None  # 'low', 'high', or None
+        self._dragged_handle = None
         self.handle_width = 10
-
-        self.colormap = None  # Debe ser una función: float [0,1] -> (r,g,b)
-        self._colormap_cache = None  # Para cachear el gradiente pintado
+        self.colormap = None
+        self._colormap_cache = None
 
     def setColormap(self, colormap):
-        """
-        colormap: función que recibe float [0,1] y devuelve (r,g,b) en [0,1] o [0,255]
-        Ejemplo: matplotlib.cm.get_cmap('RdYlGn')
-        """
         self.colormap = colormap
         self._colormap_cache = None
         self.update()
 
     def setRange(self, min_val, max_val):
         self._min_val = min_val
-        self._max_val = max_val if max_val > min_val else min_val + 1
+        self._max_val = max_val if max_val > min_val else min_val + 1.0
+        self._colormap_cache = None
         self.update()
 
     def setValues(self, low, high):
         self._low_val = low
         self._high_val = high
-        self.update()
+        self.update() # No invalidamos el caché aquí
 
     def _pos_to_val(self, pos):
-        return self._min_val + (pos / self.width()) * (self._max_val - self._min_val)
+        full_range = self._max_val - self._min_val
+        if self.width() <= 0 or full_range <= 0:
+            return self._min_val
+        return self._min_val + (pos / self.width()) * full_range
 
     def _val_to_pos(self, val):
-        return self.width() * (val - self._min_val) / (self._max_val - self._min_val)
+        full_range = self._max_val - self._min_val
+        if full_range <= 0:
+            return 0 if val <= self._min_val else self.width()
+        
+        clamped_val = max(self._min_val, min(val, self._max_val))
+        return self.width() * (clamped_val - self._min_val) / full_range
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -54,39 +55,32 @@ class QRangeSlider(QWidget):
         bar_rect = QRect(0, self.height() // 2 - 6, self.width(), 12)
         low_pos = self._val_to_pos(self._low_val)
         high_pos = self._val_to_pos(self._high_val)
+        print(f"Low: {self._low_val} at {low_pos}, High: {self._high_val} at {high_pos}")
 
+        # 1. Dibuja toda la barra de fondo en un color neutro.
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(80, 80, 90))
         painter.drawRect(bar_rect)
-        
-        # --- Fondo con paleta de colores ---
+
+        # 2. Si tenemos un mapa de colores, generamos y dibujamos el gradiente dinámico.
         if self.colormap:
-            # Primero, definimos el rectángulo del área seleccionada.
-            clip_rect = QRect(int(low_pos), bar_rect.y(), int(high_pos - low_pos), bar_rect.height())
+            selection_width = int(high_pos - low_pos)
 
-            # Guardamos el estado actual del painter
-            painter.save()
-
-            # ¡La Magia! Establecemos un área de recorte. 
-            # A partir de ahora, el painter solo dibujará dentro de este rectángulo.
-            painter.setClipRect(clip_rect)
-
-            # Ahora dibujamos la imagen completa del gradiente de color.
-            # Gracias al recorte, solo se verá la parte que está dentro de la selección.
-            if self._colormap_cache is None or self._colormap_cache.width() != self.width():
-                arr = np.linspace(0, 1, self.width())
+            if selection_width > 0:
+                # a. Creamos un gradiente que siempre va de 0 a 1 (rojo a verde),
+                #    pero con un número de puntos igual al ancho en píxeles de la selección.
+                arr = np.linspace(0, 1, selection_width)
                 colors = (self.colormap(arr)[:, :3] * 255).astype(np.uint8)
-                img_data = np.zeros((bar_rect.height(), self.width(), 3), dtype=np.uint8)
+
+                # b. Creamos una imagen pequeña, solo del tamaño de la selección.
+                img_data = np.zeros((bar_rect.height(), selection_width, 3), dtype=np.uint8)
                 img_data[:] = colors[np.newaxis, :, :]
-                qimg = QImage(img_data.data, self.width(), bar_rect.height(), 3 * self.width(), QImage.Format_RGB888)
-                self._colormap_cache = qimg
-            
-            painter.drawImage(bar_rect, self._colormap_cache)
+                qimg = QImage(img_data.data, selection_width, bar_rect.height(), 3 * selection_width, QImage.Format_RGB888)
 
-            # Restauramos el painter a su estado original, eliminando el recorte.
-            painter.restore()
+                # c. Dibujamos esta pequeña imagen de gradiente directamente en su posición.
+                painter.drawImage(QPoint(int(low_pos), bar_rect.y()), qimg)
 
-        # Draw handles
+        # 3. Dibuja los manejadores al final.
         painter.setBrush(self.palette().light())
         painter.setPen(self.palette().color(QPalette.Shadow))
         painter.drawEllipse(QPoint(int(low_pos), bar_rect.center().y()), self.handle_width, self.handle_width)
@@ -95,32 +89,32 @@ class QRangeSlider(QWidget):
     def mousePressEvent(self, event):
         low_pos = self._val_to_pos(self._low_val)
         high_pos = self._val_to_pos(self._high_val)
-        if abs(event.x() - low_pos) < self.handle_width:
-            self._dragged_handle = 'low'
-        elif abs(event.x() - high_pos) < self.handle_width:
-            self._dragged_handle = 'high'
+        
+        if abs(event.pos().x() - low_pos) < abs(event.pos().x() - high_pos):
+            if abs(event.pos().x() - low_pos) < self.handle_width:
+                self._dragged_handle = 'low'
+        else:
+            if abs(event.pos().x() - high_pos) < self.handle_width:
+                self._dragged_handle = 'high'
         self.update()
 
     def mouseMoveEvent(self, event):
+        val = self._pos_to_val(event.pos().x())
+        self.setToolTip(f"{val:.3f}")
+
         if self._dragged_handle:
-            new_val = self._pos_to_val(event.x())
+            new_val = self._pos_to_val(event.pos().x())
             if self._dragged_handle == 'low':
                 self._low_val = max(self._min_val, min(new_val, self._high_val))
             elif self._dragged_handle == 'high':
                 self._high_val = min(self._max_val, max(new_val, self._low_val))
+            
             self.rangeChanged.emit(self._low_val, self._high_val)
             self.update()
-        # Tooltip con valor bajo el mouse
-        val = self._pos_to_val(event.x())
-        self.setToolTip(f"{val:.3f}")
 
     def mouseReleaseEvent(self, event):
         self._dragged_handle = None
         self.update()
 
-    def enterEvent(self, event):
-        self.setMouseTracking(True)
-
     def leaveEvent(self, event):
-        self.setMouseTracking(False)
         self.setToolTip("")
