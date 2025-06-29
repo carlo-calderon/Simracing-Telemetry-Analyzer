@@ -36,13 +36,53 @@ class TelemetrySession:
             print(f"INFO: Columnas encontradas: {self.dataframe.columns.tolist()}")
             print(self.dataframe[columnas_existentes].head(10).to_string())
 
-    def guardar_csv(self, ruta_csv: str):
+    def save_to_csv(self, ruta_csv: str):
         """
-        Guarda el DataFrame de telemetría en un archivo CSV.
+        Guarda el DataFrame de telemetría en un archivo CSV con formato personalizado.
         :param ruta_csv: Ruta donde se guardará el archivo CSV.
         """
         if not self.dataframe.empty:
-            self.dataframe.to_csv(ruta_csv, index=False)
-            print(f"INFO: DataFrame guardado exitosamente en '{ruta_csv}'.")
+            df = self.dataframe.copy()
+            # Formateo de columnas según lo solicitado
+            if 'SessionTime' in df.columns:
+                df['SessionTime'] = df['SessionTime'].map(lambda x: f"{x:.3f}")
+            if 'RPM' in df.columns:
+                df['RPM'] = df['RPM'].map(lambda x: f"{int(round(x))}")
+            if 'Speed' in df.columns:
+                df['Speed'] = df['Speed'].map(lambda x: f"{x:.2f}")
+            if 'Brake' in df.columns:
+                df['Brake'] = df['Brake'].map(lambda x: f"{x:.4f}")
+            if 'Throttle' in df.columns:
+                df['Throttle'] = df['Throttle'].map(lambda x: f"{x:.4f}")
+            if 'SteeringWheelAngle' in df.columns:
+                df['SteeringWheelAngle'] = df['SteeringWheelAngle'].map(lambda x: f"{x:.4f}")
+            if 'Yaw' in df.columns:
+                df['Yaw'] = df['Yaw'].map(lambda x: f"{x:.5f}")
+            if 'Pitch' in df.columns:
+                df['Pitch'] = df['Pitch'].map(lambda x: f"{x:.5f}")
+            if 'Roll' in df.columns:
+                df['Roll'] = df['Roll'].map(lambda x: f"{x:.5f}")
+            df.to_csv(ruta_csv, index=False)
+            print(f"INFO: DataFrame guardado exitosamente en '{ruta_csv}' con formato personalizado.")
         else:
             print("ADVERTENCIA: El DataFrame está vacío. No se guardó ningún archivo.")
+            
+    def filter_driving_columns(self):
+        """
+        Keep only the columns necessary for driving analysis in the DataFrame.
+        Columns: SessionTime, Lap, Speed, RPM, Throttle, Brake, Lat, Lon, Alt, Steer, Yaw, Pitch, Roll,
+        SteeringWheelAngle, SlipAngle, YawRate, WheelSlip (if available)
+        """
+        required_columns = [
+            'SessionTime', 'Lap', 'Speed', 'RPM', 'Throttle', 'Brake',
+            'Lat', 'Lon', 'Alt',      # Position
+            'SteeringWheelAngle',     # Steering wheel angle
+            'Yaw', 'Pitch', 'Roll',   # Car rotation
+            'YawRate'  # Slippage indicators (if available)
+        ]
+        existing_columns = [col for col in required_columns if col in self.dataframe.columns]
+        missing_columns = [col for col in required_columns if col not in self.dataframe.columns]
+        self.dataframe = self.dataframe[existing_columns]
+        print(f"INFO: DataFrame filtered. Current columns: {self.dataframe.columns.tolist()}")
+        if missing_columns:
+            print(f"WARNING: The following required columns were not found in the DataFrame: {', '.join(missing_columns)}")
