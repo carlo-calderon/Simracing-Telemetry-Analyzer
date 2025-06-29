@@ -161,3 +161,4 @@ cython_debug/
 
 telemetry_data.csv
 *.csv
+telemetry_data.csv

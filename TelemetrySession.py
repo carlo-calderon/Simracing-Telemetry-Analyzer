@@ -62,6 +62,12 @@ class TelemetrySession:
                 df['Pitch'] = df['Pitch'].map(lambda x: f"{x:.5f}")
             if 'Roll' in df.columns:
                 df['Roll'] = df['Roll'].map(lambda x: f"{x:.5f}")
+            if 'Lat' in df.columns:
+                df['Lat'] = df['Lat'].map(lambda x: f"{x:.7f}")
+            if 'Lon' in df.columns:
+                df['Lon'] = df['Lon'].map(lambda x: f"{x:.7f}")
+            if 'Alt' in df.columns:
+                df['Alt'] = df['Alt'].map(lambda x: f"{x:.7f}")
             df.to_csv(ruta_csv, index=False)
             print(f"INFO: DataFrame guardado exitosamente en '{ruta_csv}' con formato personalizado.")
         else:
