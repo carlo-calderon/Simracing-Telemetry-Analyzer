@@ -1,5 +1,5 @@
 # RangeSlider.py
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QToolTip
 from PySide6.QtGui import QPainter, QColor, QPalette, QImage, QFont, QPen, QRadialGradient
 from PySide6.QtCore import Qt, Signal, QPoint, QRect, QPointF
 import numpy as np
@@ -102,7 +102,7 @@ class QRangeSlider(QWidget):
 
         # 5. Dibuja las etiquetas de valor sobre los manejadores (los "tooltips")
         font = self.font()
-        font.setPointSize(9)
+        font.setPointSize(8)
         font.setBold(True)
         painter.setFont(font)
         
@@ -111,11 +111,14 @@ class QRangeSlider(QWidget):
             metrics = painter.fontMetrics()
             text_rect = metrics.boundingRect(text)
             
-            # Posición de la "burbuja"
-            bubble_w = text_rect.width() + 10
-            bubble_h = text_rect.height() + 6
+            # Posición de la "burbuja" con menos margen
+            bubble_w = text_rect.width() + 6
+            bubble_h = text_rect.height() + 2
             bubble_x = pos - bubble_w / 2
-            bubble_y = bar_y - bubble_h - 2 # 2 píxeles por encima de la barra
+            bubble_y = bar_y - bubble_h - 5 # 5 píxeles por encima de la barra
+
+            # Ajustar la posición X de la burbuja para que no se salga de los bordes del widget
+            bubble_x = max(0, min(bubble_x, self.width() - bubble_w))
             bubble_rect = QRect(int(bubble_x), int(bubble_y), bubble_w, bubble_h)
             
             # Color dinámico del texto
@@ -186,10 +189,14 @@ class QRangeSlider(QWidget):
                 self._high_val = min(self._max_val, max(new_val, self._low_val))
             self.rangeChanged.emit(self._low_val, self._high_val)
             self.update()
+        
+        # Tooltip con el valor actual bajo el cursor
+        val = self._pos_to_val(event.pos().x())
+        QToolTip.showText(event.globalPos(), f"{val:.2f}", self)
 
     def mouseReleaseEvent(self, event):
         self._dragged_handle = None
         self.update()
 
     def leaveEvent(self, event):
-        self.setToolTip("")
+        QToolTip.hideText()
