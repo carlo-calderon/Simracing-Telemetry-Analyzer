@@ -34,6 +34,12 @@ class TrackWidget(QOpenGLWidget):
         self.map_texture_id = None # <--- AÑADIR: para guardar el ID de la textura
         self.map_image = None # <--- AÑADIR: para guardar la imagen del mapa
 
+    def reset_view(self):
+        """Resetea el paneo a (0,0) y el zoom a 1.0. No provoca un redibujado."""
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self.zoom = 1.0
+
     def setData(self, vertices, colors, track_bbox, map_image):
         """
         Recibe los datos ya procesados (vértices, colores, bounding box) y los prepara para OpenGL.
@@ -43,10 +49,7 @@ class TrackWidget(QOpenGLWidget):
         self.track_bbox = track_bbox
         self.map_image = map_image
 
-        # Reseteamos la vista al cargar nuevos datos
-        self.pan_x = 0.0
-        self.pan_y = 0.0
-        self.zoom = 1.0
+        self.reset_view() # Reseteamos la vista al cargar nuevos datos
 
         if self.map_image:
             self.update_map_texture()

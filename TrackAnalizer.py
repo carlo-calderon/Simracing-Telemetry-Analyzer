@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar, QStyle)
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Qt, QSettings
 from matplotlib import cm
@@ -36,12 +36,12 @@ class MainWindow(QMainWindow):
 
         # Controles para el rango de colores
         self.toolbar.addSeparator()
-        self.min_value_label = QLabel("Min: N/A")
+        # self.min_value_label = QLabel("Min: N/A")
         self.range_slider = QRangeSlider(self)
-        self.max_value_label = QLabel("Max: N/A")
-        self.toolbar.addWidget(self.min_value_label)
+        # self.max_value_label = QLabel("Max: N/A")
+        # self.toolbar.addWidget(self.min_value_label)
         self.toolbar.addWidget(self.range_slider)
-        self.toolbar.addWidget(self.max_value_label)
+        # self.toolbar.addWidget(self.max_value_label)
         self.range_slider.rangeChanged.connect(self.on_range_changed)
 
         # Configuración para archivos recientes
@@ -73,6 +73,14 @@ class MainWindow(QMainWindow):
         self.show_map_action.setChecked(False)
         self.show_map_action.toggled.connect(self.on_toggle_map_background)
         self.toolbar.addAction(self.show_map_action)
+
+        # Botón para resetear la vista del mapa
+        self.toolbar.addSeparator()
+        reset_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+        self.reset_view_action = QAction(reset_icon, "Resetear Vista", self)
+        self.reset_view_action.setToolTip("Reinicia el zoom y la posición del mapa")
+        self.reset_view_action.triggered.connect(self.on_reset_view)
+        self.toolbar.addAction(self.reset_view_action)
 
         self.Maps_API_KEY = "AIzaSyBwn0dzu6ae97g4W3ArNRAHLr-cqOvlrUQ"  # Reemplaza con tu clave de API de Google Maps
         
@@ -163,9 +171,14 @@ class MainWindow(QMainWindow):
     def on_range_changed(self, low, high):
         """Callback cuando el usuario mueve el QRangeSlider."""
         if self.dataframe is not None:
-            self.min_value_label.setText(f"Min: {low:.2f}")
-            self.max_value_label.setText(f"Max: {high:.2f}")
+            # self.min_value_label.setText(f"Min: {low:.2f}")
+            # self.max_value_label.setText(f"Max: {high:.2f}")
             self.process_and_update_track()
+
+    def on_reset_view(self):
+        """Slot para manejar la acción de resetear la vista."""
+        self.track_widget.reset_view()
+        self.track_widget.update()
 
     def update_color_controls(self):
         """Actualiza el slider y las etiquetas para la columna de color actual."""
