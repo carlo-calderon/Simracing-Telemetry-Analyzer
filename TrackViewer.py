@@ -81,6 +81,9 @@ class TrackWidget(QOpenGLWidget):
         glPointSize(3.0)
         glEnable(GL_TEXTURE_2D)
 
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
     def resizeGL(self, w, h):
         """ Se llama cada vez que la ventana cambia de tamaño. Ajusta la cámara. """
         glViewport(0, 0, w, h)

@@ -6,6 +6,8 @@ import numpy as np
 
 class QRangeSlider(QWidget):
     rangeChanged = Signal(float, float)
+    left_bar_clicked = Signal()
+    right_bar_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,7 +45,6 @@ class QRangeSlider(QWidget):
         self.update()
 
     def _pos_to_val(self, pos):
-        # (Sin cambios en esta función)
         effective_width = self.width() - 2 * self.margin
         if effective_width <= 0: return self._min_val
         clamped_pos = max(self.margin, min(pos, self.width() - self.margin))
@@ -53,19 +54,11 @@ class QRangeSlider(QWidget):
     def _val_to_pos(self, val):
         full_range = self._max_val - self._min_val
         if full_range <= 0:
-            # Si no hay rango, pon los manejadores en los extremos
             return self.margin if val <= self._min_val else self.width() - self.margin
         
-        # Ancho efectivo de la barra, descontando los márgenes de los lados
         effective_width = self.width() - 2 * self.margin
-        
-        # Asegurarnos de que el valor esté dentro del rango para evitar errores
         clamped_val = max(self._min_val, min(val, self._max_val))
-        
-        # Calculamos la fracción (0.0 a 1.0) que representa el valor dentro del rango total
         val_fraction = (clamped_val - self._min_val) / full_range
-        
-        # La posición final es el margen izquierdo más la fracción del ancho efectivo
         return self.margin + val_fraction * effective_width
 
     def paintEvent(self, event):
@@ -78,31 +71,32 @@ class QRangeSlider(QWidget):
         low_pos = self._val_to_pos(self._low_val)
         high_pos = self._val_to_pos(self._high_val)
 
-        # --- Lógica de Dibujado Final ---
+        if not self.colormap:
+            bar_rect = QRect(self.margin, bar_y, self.width() - 2 * self.margin, bar_height)
+            painter.setBrush(QColor(80, 80, 90))
+            painter.drawRect(bar_rect)
+        else:
+            # 1. Dibuja la parte izquierda (fuera de rango) con su color atenuado
+            left_rect = QRect(self.margin, bar_y, int(low_pos) - self.margin, bar_height)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(self._min_edge_color)
+            painter.drawRect(left_rect)
+            
+            # 2. Dibuja la parte derecha (fuera de rango) con su color atenuado
+            right_rect = QRect(int(high_pos), bar_y, self.width() - self.margin - int(high_pos), bar_height)
+            painter.setBrush(self._max_edge_color)
+            painter.drawRect(right_rect)
 
-        # 1. Dibuja la parte izquierda (fuera de rango) con su color atenuado
-        left_rect = QRect(self.margin, bar_y, int(low_pos) - self.margin, bar_height)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(self._min_edge_color)
-        painter.drawRect(left_rect)
+            # 3. Dibuja el gradiente dinámico en la sección seleccionada
+            if self.colormap:
+                selection_width = int(high_pos - low_pos)
+                if selection_width > 0:
+                    arr = np.linspace(0, 1, selection_width)
+                    colors = (self.colormap(arr)[:, :3] * 255).astype(np.uint8)
+                    qimg = QImage(colors.data, selection_width, 1, 3 * selection_width, QImage.Format_RGB888)
+                    dest_rect = QRect(int(low_pos), bar_y, selection_width, bar_height)
+                    painter.drawImage(dest_rect, qimg.scaled(selection_width, bar_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
         
-        # 2. Dibuja la parte derecha (fuera de rango) con su color atenuado
-        right_rect = QRect(int(high_pos), bar_y, self.width() - self.margin - int(high_pos), bar_height)
-        painter.setBrush(self._max_edge_color)
-        painter.drawRect(right_rect)
-
-        # 3. Dibuja el gradiente dinámico en la sección seleccionada
-        if self.colormap:
-            selection_width = int(high_pos - low_pos)
-            if selection_width > 0:
-                arr = np.linspace(0, 1, selection_width)
-                colors = (self.colormap(arr)[:, :3] * 255).astype(np.uint8)
-                qimg = QImage(colors.data, selection_width, 1, 3 * selection_width, QImage.Format_RGB888)
-                dest_rect = QRect(int(low_pos), bar_y, selection_width, bar_height)
-                painter.drawImage(dest_rect, qimg.scaled(selection_width, bar_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
-        
-        # El resto del dibujado (handles, etiquetas) no cambia
-        # ... (pega aquí el resto de tu paintEvent para las etiquetas y los handles)
         handle_radius = self.handle_diameter / 2
         for pos in [low_pos, high_pos]:
             gradient = QRadialGradient(QPointF(pos, self.height() // 2), handle_radius)
@@ -169,19 +163,30 @@ class QRangeSlider(QWidget):
         painter.drawText(min_bubble_rect, Qt.AlignCenter, min_text)
         painter.drawText(max_bubble_rect, Qt.AlignCenter, max_text)
 
-
-    # --- El resto de métodos no necesitan cambios ---
-    # ... (pega aquí el resto de tus métodos: mousePress, mouseMove, mouseRelease, leaveEvent)
     def mousePressEvent(self, event):
-        low_pos = self._val_to_pos(self._low_val)
-        high_pos = self._val_to_pos(self._high_val)
-        if abs(event.pos().x() - low_pos) < abs(event.pos().x() - high_pos):
-            if abs(event.pos().x() - low_pos) < self.handle_diameter / 2:
-                self._dragged_handle = 'low'
-        else:
-            if abs(event.pos().x() - high_pos) < self.handle_diameter / 2:
-                self._dragged_handle = 'high'
-        self.update()
+        if event.button() == Qt.LeftButton:
+            low_pos = self._val_to_pos(self._low_val)
+            high_pos = self._val_to_pos(self._high_val)
+            
+            # Lógica existente para arrastrar los manejadores
+            if abs(event.pos().x() - low_pos) < abs(event.pos().x() - high_pos):
+                if abs(event.pos().x() - low_pos) < self.handle_diameter / 2:
+                    self._dragged_handle = 'low'
+            else:
+                if abs(event.pos().x() - high_pos) < self.handle_diameter / 2:
+                    self._dragged_handle = 'high'
+
+            # Comprobar si el clic fue en las barras de los extremos
+            if event.pos().x() < low_pos and not self._dragged_handle == 'low':
+                self.left_bar_clicked.emit()
+                return # Detenemos el procesamiento aquí
+            
+            if event.pos().x() > high_pos and not self._dragged_handle == 'high':
+                self.right_bar_clicked.emit()
+                return # Detenemos el procesamiento aquí
+
+
+            self.update()
 
     def mouseMoveEvent(self, event):
         if self._dragged_handle:

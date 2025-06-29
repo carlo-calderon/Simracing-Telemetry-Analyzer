@@ -20,6 +20,9 @@ class MainWindow(QMainWindow):
         self.dataframe = None # MainWindow es la dueña del dataframe
         self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
 
+        self.show_low_range = True
+        self.show_high_range = True
+
         # Creamos nuestro widget de OpenGL y lo ponemos como widget central
         self.track_widget = TrackWidget(self)
         self.setCentralWidget(self.track_widget)
@@ -27,25 +30,20 @@ class MainWindow(QMainWindow):
         # Barra de herramientas
         self.toolbar = QToolBar("Herramientas", self)
         self.addToolBar(self.toolbar)
-
-        # ComboBox para seleccionar la columna de color
         self.color_combo = QComboBox(self)
         self.color_combo.setToolTip("Columna para colorear los puntos")
         self.color_combo.currentTextChanged.connect(self.on_color_column_changed)
         self.toolbar.addWidget(self.color_combo)
-
-        # Controles para el rango de colores
         self.toolbar.addSeparator()
-        # self.min_value_label = QLabel("Min: N/A")
         self.range_slider = QRangeSlider(self)
-        # self.max_value_label = QLabel("Max: N/A")
-        # self.toolbar.addWidget(self.min_value_label)
         self.toolbar.addWidget(self.range_slider)
-        # self.toolbar.addWidget(self.max_value_label)
+
         self.range_slider.rangeChanged.connect(self.on_range_changed)
+        self.range_slider.left_bar_clicked.connect(self.toggle_low_range_visibility)
+        self.range_slider.right_bar_clicked.connect(self.toggle_high_range_visibility)
 
         # Configuración para archivos recientes
-        self.settings = QSettings("MiEmpresa", "SimracingTelemetryAnalyzer")
+        self.settings = QSettings("CarcaldeF1", "SimracingTelemetryAnalyzer")
         self.recent_file_actions = []
         self.max_recent_files = 5
 
@@ -96,7 +94,17 @@ class MainWindow(QMainWindow):
         self.track_widget.mouse_coord_changed.connect(self.update_statusbar_coords)
 
         self.update_recent_files_menu()
-    
+
+    def toggle_low_range_visibility(self):
+        self.show_low_range = not self.show_low_range
+        print(f"INFO: Visibilidad del rango bajo establecida a {self.show_low_range}")
+        self.process_and_update_track()
+
+    def toggle_high_range_visibility(self):
+        self.show_high_range = not self.show_high_range
+        print(f"INFO: Visibilidad del rango alto establecida a {self.show_high_range}")
+        self.process_and_update_track()
+
     def open_file_dialog(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Abrir archivo de Telemetría", "", "iRacing Telemetry Files (*.ibt)")
         if file_name:
@@ -222,8 +230,6 @@ class MainWindow(QMainWindow):
             return {'min_lon': lon.min(), 'max_lon': lon.max(), 'min_lat': lat.min(), 'max_lat': lat.max()}
         return None
 
-# En TrackAnalizer.py, reemplaza la función process_and_update_track
-
     def process_and_update_track(self):
         """
         Procesa el dataframe actual basado en los controles de la UI y envía los datos al TrackWidget.
@@ -231,13 +237,11 @@ class MainWindow(QMainWindow):
         df = self.dataframe
         column_name = self.color_combo.currentText()
         if df is None or df.empty or not column_name:
-            # Asegúrate de que setData puede manejar 4 Nones si es necesario
             self.track_widget.setData(None, None, None, None) 
             return
 
         vmin = self.range_slider._low_val
         vmax = self.range_slider._high_val
-        
         pan_x, pan_y, zoom = self.track_widget.get_view_state()
 
         # 1. Preparar vértices y bounding box (esto está bien)
@@ -271,15 +275,23 @@ class MainWindow(QMainWindow):
         low_mask = values < vmin
         high_mask = values > vmax
         
-        colors[low_mask] = dark_min_color
-        colors[high_mask] = dark_max_color
+        if self.show_low_range:
+            colors[low_mask] = dark_min_color
+            min_edge_qcolor = QColor.fromRgbF(*dark_min_color)
+        else:
+            colors[low_mask] = [0,0,0,0] # Hacemos los puntos transparentes
+            min_edge_qcolor = QColor(80, 80, 90) # Color gris neutro para el slider
+ 
+        if self.show_high_range:
+            colors[high_mask] = dark_max_color
+            max_edge_qcolor = QColor.fromRgbF(*dark_max_color)
+        else:
+            colors[high_mask] = [0,0,0,0] # Hacemos los puntos transparentes
+            max_edge_qcolor = QColor(80, 80, 90) # Color gris neutro para el slider
         # --- FIN DE LA LÓGICA DE COLORES ---
 
         # 3. Actualizar el fondo del Range Slider
-        # Convertimos los colores numpy a QColor para el slider
-        min_qcolor = QColor.fromRgbF(*dark_min_color)
-        max_qcolor = QColor.fromRgbF(*dark_max_color)
-        self.range_slider.set_edge_colors(min_qcolor, max_qcolor)
+        self.range_slider.set_edge_colors(min_edge_qcolor, max_edge_qcolor)
 
         # 4. Enviar datos al TrackWidget
         map_image = self.map_image_cache if self.show_map_action.isChecked() else None
