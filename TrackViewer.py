@@ -5,7 +5,7 @@ import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMenuBar, QToolBar, QComboBox, QLabel, QWidget)
 from PySide6.QtWidgets import QProgressDialog
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtGui import QAction, QColor, QPainter, QPen, QPalette
+from PySide6.QtGui import QAction, QColor, QPainter, QPen, QPalette, QImage
 from PySide6.QtCore import Qt, QSettings, Signal, QPoint, QRect
 from OpenGL.GL import *
 from matplotlib import cm  # Usaremos matplotlib para los mapas de colores
@@ -13,6 +13,8 @@ from matplotlib import cm  # Usaremos matplotlib para los mapas de colores
 from TelemetrySession import TelemetrySession
 
 class TrackWidget(QOpenGLWidget):
+    mouse_coord_changed = Signal(float, float)
+
     """
     Este widget es el lienzo de OpenGL donde dibujaremos la pista.
     """
@@ -29,24 +31,52 @@ class TrackWidget(QOpenGLWidget):
         self.zoom = 1.0
         self._last_mouse_pos = None
 
-    def setData(self, vertices, colors, track_bbox):
+        self.map_texture_id = None # <--- AÑADIR: para guardar el ID de la textura
+        self.map_image = None # <--- AÑADIR: para guardar la imagen del mapa
+
+    def setData(self, vertices, colors, track_bbox, map_image):
         """
         Recibe los datos ya procesados (vértices, colores, bounding box) y los prepara para OpenGL.
         """
         self.vertices = vertices
         self.colors = colors
         self.track_bbox = track_bbox
+        self.map_image = map_image
+
         # Reseteamos la vista al cargar nuevos datos
         self.pan_x = 0.0
         self.pan_y = 0.0
         self.zoom = 1.0
+
+        if self.map_image:
+            self.update_map_texture()
+
         self.update() # Le decimos al widget que necesita redibujarse
+
+    def update_map_texture(self):
+        """ Convierte la QImage en una textura de OpenGL. """
+        if self.map_texture_id is not None:
+            glDeleteTextures(1, [self.map_texture_id])
+        
+        self.map_texture_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.map_texture_id)
+
+        # Convertimos la QImage a un formato que OpenGL entienda
+        img = self.map_image.convertToFormat(QImage.Format.Format_RGBA8888)
+        ptr = img.bits()
+        
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width(), img.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, ptr)
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glBindTexture(GL_TEXTURE_2D, 0)
 
     def initializeGL(self):
         """ Se llama una sola vez al crear el widget. Prepara el estado de OpenGL. """
         glClearColor(0.1, 0.1, 0.15, 1.0)  # Fondo gris oscuro
         glEnable(GL_POINT_SMOOTH)
         glPointSize(3.0)
+        glEnable(GL_TEXTURE_2D)
 
     def resizeGL(self, w, h):
         """ Se llama cada vez que la ventana cambia de tamaño. Ajusta la cámara. """
@@ -112,6 +142,8 @@ class TrackWidget(QOpenGLWidget):
         
         self.updateProjection() # Recalculamos la proyección por si los datos cambiaron
 
+        self.draw_background_map()
+
         if self.vertices is not None and self.colors is not None:
             glEnableClientState(GL_VERTEX_ARRAY)
             glEnableClientState(GL_COLOR_ARRAY)
@@ -125,6 +157,26 @@ class TrackWidget(QOpenGLWidget):
 
             glDisableClientState(GL_COLOR_ARRAY)
             glDisableClientState(GL_VERTEX_ARRAY)
+
+    def draw_background_map(self):
+        """ Dibuja un rectángulo con la textura del mapa. """
+        if self.map_texture_id is None or self.track_bbox is None:
+            return
+
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Color blanco para no teñir la textura
+        glBindTexture(GL_TEXTURE_2D, self.map_texture_id)
+        
+        bbox = self.track_bbox
+        
+        # Dibujamos un quad (rectángulo) usando las coordenadas del bounding box
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 1); glVertex2f(bbox['min_lon'], bbox['min_lat']) # Abajo-Izquierda
+        glTexCoord2f(1, 1); glVertex2f(bbox['max_lon'], bbox['min_lat']) # Abajo-Derecha
+        glTexCoord2f(1, 0); glVertex2f(bbox['max_lon'], bbox['max_lat']) # Arriba-Derecha
+        glTexCoord2f(0, 0); glVertex2f(bbox['min_lon'], bbox['max_lat']) # Arriba-Izquierda
+        glEnd()
+
+        glBindTexture(GL_TEXTURE_2D, 0)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -168,6 +220,46 @@ class TrackWidget(QOpenGLWidget):
             self._last_mouse_pos = event.pos()
             self.update()
 
+        # Calcular lon/lat bajo el mouse SIEMPRE que se mueve el mouse
+        if self.track_bbox:
+            bbox = self.track_bbox
+            track_width = bbox['max_lon'] - bbox['min_lon']
+            track_height = bbox['max_lat'] - bbox['min_lat']
+            margin_x = track_width * 0.05
+            margin_y = track_height * 0.05
+
+            left, right = bbox['min_lon'] - margin_x, bbox['max_lon'] + margin_x
+            bottom, top = bbox['min_lat'] - margin_y, bbox['max_lat'] + margin_y
+
+            # Mantener la escala correcta (igual que en updateProjection)
+            if self.aspect_ratio > (track_width / track_height if track_height > 0 else 1.0):
+                center_x = (left + right) / 2
+                new_width = (top - bottom) * self.aspect_ratio
+                left = center_x - new_width / 2
+                right = center_x + new_width / 2
+            else:
+                center_y = (bottom + top) / 2
+                new_height = (right - left) / self.aspect_ratio
+                bottom = center_y - new_height / 2
+                top = center_y + new_height / 2
+
+            width = (right - left) / self.zoom
+            height = (top - bottom) / self.zoom
+
+            cx = (left + right) / 2 + self.pan_x
+            cy = (bottom + top) / 2 + self.pan_y
+
+            left = cx - width / 2
+            right = cx + width / 2
+            bottom = cy - height / 2
+            top = cy + height / 2
+
+            mx = event.x() / self.width()
+            my = 1.0 - event.y() / self.height()
+            lon = left + mx * (right - left)
+            lat = bottom + my * (top - bottom)
+            self.mouse_coord_changed.emit(lon, lat)
+
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._last_mouse_pos = None
@@ -199,3 +291,20 @@ class TrackWidget(QOpenGLWidget):
             self.pan_y += world_y - new_world_y
 
         self.update()
+
+    def set_background_image(self, image):
+        """
+        Recibe una nueva imagen de fondo y fuerza la actualización de la textura de OpenGL.
+        """
+        self.map_image = image
+
+        if self.map_image:
+            # Si recibimos una imagen válida, le decimos a OpenGL que la procese.
+            self.update_map_texture()
+        else:
+            # Si recibimos None (para ocultar el mapa), borramos la textura existente.
+            if self.map_texture_id is not None:
+                glDeleteTextures(1, [self.map_texture_id])
+                self.map_texture_id = None
+
+        # Pedimos que se redibuje la escena con (o sin) el nuevo fondo.

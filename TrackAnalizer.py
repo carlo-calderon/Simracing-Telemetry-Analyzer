@@ -1,9 +1,12 @@
 import os
 import numpy as np
-from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog)
-from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar)
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Qt, QSettings
 from matplotlib import cm
+import requests
+from PySide6.QtGui import QImage, QPixmap, QPainter
+import math
 
 from TelemetrySession import TelemetrySession
 from RangeSlider import QRangeSlider
@@ -15,6 +18,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Visor de Telemetría iRacing")
         self.setGeometry(100, 100, 1200, 900)
         self.dataframe = None # MainWindow es la dueña del dataframe
+        self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
 
         # Creamos nuestro widget de OpenGL y lo ponemos como widget central
         self.track_widget = TrackWidget(self)
@@ -62,7 +66,27 @@ class MainWindow(QMainWindow):
             action.triggered.connect(self.open_recent_file)
             self.recent_file_actions.append(action)
             self.file_menu.addAction(action)
+
+        # Botón toggle para mostrar/ocultar fondo de mapa
+        self.show_map_action = QAction(QIcon("google_maps.png"), "Cargar fondo", self)
+        self.show_map_action.setCheckable(True)
+        self.show_map_action.setChecked(False)
+        self.show_map_action.toggled.connect(self.on_toggle_map_background)
+        self.toolbar.addAction(self.show_map_action)
+
+        self.Maps_API_KEY = "AIzaSyBwn0dzu6ae97g4W3ArNRAHLr-cqOvlrUQ"  # Reemplaza con tu clave de API de Google Maps
         
+        self.map_image_cache = None  # Para guardar la imagen descargada
+        self.map_bbox_cache = None   # Para saber si el bbox cambió
+
+        # Status bar para mostrar coordenadas
+        self.statusbar = QStatusBar(self)
+        self.setStatusBar(self.statusbar)
+        self.coord_label = QLabel("Lon: -, Lat: -")
+        self.statusbar.addPermanentWidget(self.coord_label)
+
+        self.track_widget.mouse_coord_changed.connect(self.update_statusbar_coords)
+
         self.update_recent_files_menu()
     
     def open_file_dialog(self):
@@ -159,6 +183,29 @@ class MainWindow(QMainWindow):
             # Llama a on_range_changed para actualizar las etiquetas y dibujar la pista por primera vez
             self.on_range_changed(min_val, max_val)
 
+    def on_toggle_map_background(self, checked):
+        """Muestra u oculta el fondo de mapa satelital."""
+        if checked:
+            # Solo descarga si no está en caché o el bbox cambió
+            if self.map_image_cache is None or self.map_bbox_cache != self.current_bbox():
+                bbox = self.current_bbox()
+                if bbox is not None:
+                    self.map_image_cache = self.fetch_map_tiles_and_stitch(bbox, self.ZOOM)
+                    self.map_bbox_cache = bbox
+            # Actualiza el fondo en el widget
+            self.track_widget.set_background_image(self.map_image_cache)
+        else:
+            self.track_widget.set_background_image(None)
+        self.track_widget.update()
+
+    def current_bbox(self):
+        """Devuelve el bounding box actual de la pista."""
+        if self.dataframe is not None and not self.dataframe.empty:
+            lon = self.dataframe['Lon'].to_numpy()
+            lat = self.dataframe['Lat'].to_numpy()
+            return {'min_lon': lon.min(), 'max_lon': lon.max(), 'min_lat': lat.min(), 'max_lat': lat.max()}
+        return None
+
     def process_and_update_track(self):
         """
         Procesa el dataframe actual basado en los controles de la UI y envía los datos al TrackWidget.
@@ -190,11 +237,93 @@ class MainWindow(QMainWindow):
         norm_values = np.clip(norm_values, 0, 1)
         colors = cm.RdYlGn(norm_values)
 
-        # 3. Enviar datos al widget para que se dibuje
-        self.track_widget.setData(vertices, colors, track_bbox)
+        # 3. No descargues el fondo aquí, solo pásalo si está activo
+        map_image = self.map_image_cache if self.show_map_action.isChecked() else None
+        self.track_widget.setData(vertices, colors, track_bbox, map_image)
 
         # Restaurar zoom y paneo
         self.track_widget.pan_x = pan_x
         self.track_widget.pan_y = pan_y
         self.track_widget.zoom = zoom
         self.track_widget.update()
+
+    def deg2num(self, lat_deg, lon_deg, zoom):
+        """ Convierte coordenadas geográficas a coordenadas de tesela de Google. """
+        lat_rad = math.radians(lat_deg)
+        n = 2.0 ** zoom
+        xtile = int((lon_deg + 180.0) / 360.0 * n)
+        ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+        return (xtile, ytile)
+    
+   
+    def fetch_map_tiles_and_stitch(self, bbox, zoom):
+        """
+        Calcula las teselas necesarias, las descarga y las une en una sola imagen.
+        """
+        if not self.Maps_API_KEY or self.Maps_API_KEY == "TU_CLAVE_DE_API_AQUI":
+            print("ADVERTENCIA: No se ha configurado una clave de API de Google Maps.")
+            return None
+
+        # 1. Calcular el rango de teselas necesarias
+        top_left_x, top_left_y = self.deg2num(bbox['max_lat'], bbox['min_lon'], zoom)
+        bottom_right_x, bottom_right_y = self.deg2num(bbox['min_lat'], bbox['max_lon'], zoom)
+        
+        # El rango de teselas a descargar
+        x_min, x_max = top_left_x, bottom_right_x
+        y_min, y_max = top_left_y, bottom_right_y
+        
+        num_tiles_x = (x_max - x_min) + 1
+        num_tiles_y = (y_max - y_min) + 1
+        
+        print(f"INFO: Se descargarán {num_tiles_x * num_tiles_y} teselas ({num_tiles_x}x{num_tiles_y}) para el zoom {zoom}.")
+
+        # 2. Crear el lienzo final para unir las imágenes
+        tile_size = 256  # Google usa teselas de 256x256
+        stitched_image = QImage(num_tiles_x * tile_size, num_tiles_y * tile_size, QImage.Format_RGB888)
+        painter = QPainter(stitched_image)
+
+        # Barra de progreso para la descarga
+        progress = QProgressDialog("Descargando teselas del mapa...", "Cancelar", 0, num_tiles_x * num_tiles_y, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setValue(0)
+        
+        # 3. Descargar y pegar cada tesela
+        count = 0
+        for x in range(x_min, x_max + 1):
+            for y in range(y_min, y_max + 1):
+                if progress.wasCanceled():
+                    painter.end()
+                    return None
+
+                progress.setValue(count)
+                QApplication.processEvents() # Actualizar la UI
+                
+                # URL de la API de Teselas de Google
+                tile_url = f"https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={zoom}&key={self.Maps_API_KEY}"
+                
+                try:
+                    response = requests.get(tile_url, stream=True)
+                    response.raise_for_status()
+                    tile_image = QImage()
+                    tile_image.loadFromData(response.content)
+                    
+                    # Pegamos la tesela en su posición en el lienzo grande
+                    px = (x - x_min) * tile_size
+                    py = (y - y_min) * tile_size
+                    painter.drawImage(px, py, tile_image)
+                    
+                except requests.exceptions.RequestException as e:
+                    print(f"ERROR: No se pudo descargar la tesela ({x},{y}): {e}")
+
+                count += 1
+        
+        painter.end()
+        progress.setValue(num_tiles_x * num_tiles_y)
+        print("INFO: Mosaico del mapa completado.")
+        return stitched_image
+    
+    def update_statusbar_coords(self, lon, lat):
+        """
+        Este es el 'slot' que recibe las coordenadas del TrackWidget y actualiza la etiqueta.
+        """
+        self.coord_label.setText(f"Lon: {lon:.6f}, Lat: {lat:.6f}")

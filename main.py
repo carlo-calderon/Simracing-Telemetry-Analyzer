@@ -9,6 +9,9 @@ if __name__ == "__main__":
     window.show()
     sys.exit(app.exec())
 
+# API_KEY = "AIzaSyBwn0dzu6ae97g4W3ArNRAHLr-cqOvlrUQ"  # Reemplaza con tu clave de API de Google Maps
+
+
 # import os
 # from TelemetrySession import TelemetrySession
 
