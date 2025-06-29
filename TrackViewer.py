@@ -1,11 +1,12 @@
 # TrackViewer.py
 import sys
 import numpy as np
+import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMenuBar)
 from PySide6.QtWidgets import QProgressDialog
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtGui import QAction, QColor
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from OpenGL.GL import *
 from matplotlib import cm  # Usaremos matplotlib para los mapas de colores
 
@@ -55,9 +56,9 @@ class TrackWidget(QOpenGLWidget):
         # Normalizamos la velocidad (0.0 a 1.0) para poder aplicarle un mapa de color
         norm_speed = (speed - speed.min()) / (speed.max() - speed.min())
         
-        # Usamos el mapa de colores "plasma" de matplotlib. Azul=lento, Amarillo=rápido.
+        # Usamos el mapa de colores "RdYlGn". Rojo=lento, Amarillo=medio, Verde=rápido.
         # Obtenemos un array de colores RGBA (Rojo, Verde, Azul, Alpha)
-        self.colors = cm.plasma(norm_speed)
+        self.colors = cm.RdYlGn(norm_speed)
 
         self.update() # Le decimos al widget que necesita redibujarse
 
@@ -230,39 +231,84 @@ class MainWindow(QMainWindow):
         self.track_widget = TrackWidget(self)
         self.setCentralWidget(self.track_widget)
 
+        # Configuración para archivos recientes
+        self.settings = QSettings("MiEmpresa", "SimracingTelemetryAnalyzer")
+        self.recent_file_actions = []
+        self.max_recent_files = 5
+
         # Creamos una barra de menú
         menu_bar = self.menuBar()
-        file_menu = menu_bar.addMenu("&Archivo")
+        self.file_menu = menu_bar.addMenu("&Archivo")
 
         # Creamos una acción para abrir archivos
         open_action = QAction("&Abrir archivo .ibt...", self)
         open_action.triggered.connect(self.open_file_dialog)
-        file_menu.addAction(open_action)
+        self.file_menu.addAction(open_action)
+
+        # Separador y espacio para archivos recientes
+        self.file_menu.addSeparator()
+        for i in range(self.max_recent_files):
+            action = QAction(self)
+            action.setVisible(False)
+            action.triggered.connect(self.open_recent_file)
+            self.recent_file_actions.append(action)
+            self.file_menu.addAction(action)
+        
+        self.update_recent_files_menu()
     
     def open_file_dialog(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Abrir archivo de Telemetría", "", "iRacing Telemetry Files (*.ibt)")
         if file_name:
-            print(f"Abriendo archivo: {file_name}")
+            self.load_file(file_name)
 
-            # Creamos un diálogo de progreso bloqueante
-            progress_dialog = QProgressDialog("Cargando telemetría...", "Cancelar", 0, 0, self)  # 0, 0 indica rango indefinido
-            progress_dialog.setWindowModality(Qt.WindowModal)  # Hace el diálogo bloqueante
-            progress_dialog.setMinimumDuration(0)  # Muestra el diálogo inmediatamente
-            progress_dialog.setValue(0) # Inicializa el valor
-            progress_dialog.show()
+    def load_file(self, file_name):
+        print(f"Abriendo archivo: {file_name}")
 
-            QApplication.processEvents()  # Asegura que el diálogo se muestre antes de cargar
+        progress_dialog = QProgressDialog("Cargando telemetría...", "Cancelar", 0, 0, self)
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setValue(0)
+        progress_dialog.show()
 
-            try:
-                session = TelemetrySession(file_name)
-                if not session.dataframe.empty:
-                    # Pasamos el dataframe filtrado a nuestro widget
-                    session.filter_driving_columns()
-                    self.track_widget.setData(session.dataframe)
-                else:
-                    print("Error: No se cargaron datos de telemetría.")
-            except Exception as e:
-                print(f"Error durante la carga: {e}")
-            finally:
-                progress_dialog.cancel()  # Cierra el diálogo al finalizar, incluso si hubo un error
-                del progress_dialog # Limpia la memoria
+        QApplication.processEvents()
+
+        try:
+            session = TelemetrySession(file_name)
+            if not session.dataframe.empty:
+                session.filter_driving_columns()
+                self.track_widget.setData(session.dataframe)
+                self.add_to_recent_files(file_name)
+            else:
+                print("Error: No se cargaron datos de telemetría.")
+        except Exception as e:
+            print(f"Error durante la carga: {e}")
+        finally:
+            progress_dialog.cancel()
+            del progress_dialog
+
+    def add_to_recent_files(self, file_name):
+        files = self.settings.value("recentFiles", [], type=list)
+        try:
+            files.remove(file_name)
+        except ValueError:
+            pass
+        files.insert(0, file_name)
+        del files[self.max_recent_files:]
+        self.settings.setValue("recentFiles", files)
+        self.update_recent_files_menu()
+
+    def update_recent_files_menu(self):
+        files = self.settings.value("recentFiles", [], type=list)
+        num_recent_files = min(len(files), self.max_recent_files)
+        for i in range(num_recent_files):
+            text = f"&{i + 1} {os.path.basename(files[i])}"
+            self.recent_file_actions[i].setText(text)
+            self.recent_file_actions[i].setData(files[i])
+            self.recent_file_actions[i].setVisible(True)
+        for i in range(num_recent_files, self.max_recent_files):
+            self.recent_file_actions[i].setVisible(False)
+
+    def open_recent_file(self):
+        action = self.sender()
+        if action:
+            self.load_file(action.data())
