@@ -84,6 +84,48 @@ class TrackWidget(QOpenGLWidget):
         self.aspect_ratio = w / h if h > 0 else 1.0
         self.updateProjection()
 
+    def get_world_limits(self):
+        """
+        Devuelve los límites (left, right, bottom, top) del mundo visible actual,
+        considerando el bounding box, aspecto, zoom y paneo.
+        """
+        if self.track_bbox is None:
+            return None
+
+        bbox = self.track_bbox
+        track_width = bbox['max_lon'] - bbox['min_lon']
+        track_height = bbox['max_lat'] - bbox['min_lat']
+        track_aspect = track_width / track_height if track_height > 0 else 1.0
+
+        margin_x = track_width * 0.05
+        margin_y = track_height * 0.05
+
+        left, right = bbox['min_lon'] - margin_x, bbox['max_lon'] + margin_x
+        bottom, top = bbox['min_lat'] - margin_y, bbox['max_lat'] + margin_y
+
+        if self.aspect_ratio > track_aspect:
+            center_x = (left + right) / 2
+            new_width = (top - bottom) * self.aspect_ratio
+            left = center_x - new_width / 2
+            right = center_x + new_width / 2
+        else:
+            center_y = (bottom + top) / 2
+            new_height = (right - left) / self.aspect_ratio
+            bottom = center_y - new_height / 2
+            top = center_y + new_height / 2
+
+        cx = (left + right) / 2 + self.pan_x
+        cy = (bottom + top) / 2 + self.pan_y
+        width = (right - left) / self.zoom
+        height = (top - bottom) / self.zoom
+
+        left = cx - width / 2
+        right = cx + width / 2
+        bottom = cy - height / 2
+        top = cy + height / 2
+
+        return left, right, bottom, top
+
     def updateProjection(self):
         """
         Calcula la proyección ortográfica para que la pista se vea a escala
@@ -95,43 +137,7 @@ class TrackWidget(QOpenGLWidget):
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
 
-        bbox = self.track_bbox
-        track_width = bbox['max_lon'] - bbox['min_lon']
-        track_height = bbox['max_lat'] - bbox['min_lat']
-        track_aspect = track_width / track_height if track_height > 0 else 1.0
-
-        # Agregamos un pequeño margen
-        margin_x = track_width * 0.05
-        margin_y = track_height * 0.05
-
-        left, right = bbox['min_lon'] - margin_x, bbox['max_lon'] + margin_x
-        bottom, top = bbox['min_lat'] - margin_y, bbox['max_lat'] + margin_y
-
-        # --- Lógica para mantener la escala correcta (evitar que la pista se estire) ---
-        if self.aspect_ratio > track_aspect:
-            # La ventana es más ancha que la pista, ajustamos el ancho
-            center_x = (left + right) / 2
-            new_width = (top - bottom) * self.aspect_ratio
-            left = center_x - new_width / 2
-            right = center_x + new_width / 2
-        else:
-            # La ventana es más alta que la pista, ajustamos el alto
-            center_y = (bottom + top) / 2
-            new_height = (right - left) / self.aspect_ratio
-            bottom = center_y - new_height / 2
-            top = center_y + new_height / 2
-
-        # Aplicar zoom (centrado en el centro de la vista)
-        cx = (left + right) / 2 + self.pan_x
-        cy = (bottom + top) / 2 + self.pan_y
-        width = (right - left) / self.zoom
-        height = (top - bottom) / self.zoom
-
-        left = cx - width / 2
-        right = cx + width / 2
-        bottom = cy - height / 2
-        top = cy + height / 2
-
+        left, right, bottom, top = self.get_world_limits()
         glOrtho(left, right, bottom, top, -1.0, 1.0)
 
     def paintGL(self):
@@ -222,38 +228,7 @@ class TrackWidget(QOpenGLWidget):
 
         # Calcular lon/lat bajo el mouse SIEMPRE que se mueve el mouse
         if self.track_bbox:
-            bbox = self.track_bbox
-            track_width = bbox['max_lon'] - bbox['min_lon']
-            track_height = bbox['max_lat'] - bbox['min_lat']
-            margin_x = track_width * 0.05
-            margin_y = track_height * 0.05
-
-            left, right = bbox['min_lon'] - margin_x, bbox['max_lon'] + margin_x
-            bottom, top = bbox['min_lat'] - margin_y, bbox['max_lat'] + margin_y
-
-            # Mantener la escala correcta (igual que en updateProjection)
-            if self.aspect_ratio > (track_width / track_height if track_height > 0 else 1.0):
-                center_x = (left + right) / 2
-                new_width = (top - bottom) * self.aspect_ratio
-                left = center_x - new_width / 2
-                right = center_x + new_width / 2
-            else:
-                center_y = (bottom + top) / 2
-                new_height = (right - left) / self.aspect_ratio
-                bottom = center_y - new_height / 2
-                top = center_y + new_height / 2
-
-            width = (right - left) / self.zoom
-            height = (top - bottom) / self.zoom
-
-            cx = (left + right) / 2 + self.pan_x
-            cy = (bottom + top) / 2 + self.pan_y
-
-            left = cx - width / 2
-            right = cx + width / 2
-            bottom = cy - height / 2
-            top = cy + height / 2
-
+            left, right, bottom, top = self.get_world_limits()
             mx = event.x() / self.width()
             my = 1.0 - event.y() / self.height()
             lon = left + mx * (right - left)

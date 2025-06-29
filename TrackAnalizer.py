@@ -15,7 +15,7 @@ from TrackViewer import TrackWidget  # Asegúrate de que TrackWidget esté en Tr
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Visor de Telemetría iRacing")
+        self.setWindowTitle("Simracing Telemetry Analizer")
         self.setGeometry(100, 100, 1200, 900)
         self.dataframe = None # MainWindow es la dueña del dataframe
         self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
@@ -175,12 +175,15 @@ class MainWindow(QMainWindow):
             min_val = df[column_name].min()
             max_val = df[column_name].max()
 
+            # Puedes elegir la paleta según la columna si lo deseas
+            colormap = cm.get_cmap('RdYlGn')  # O cualquier otra lógica
+            self.range_slider.setColormap(colormap)
+
             self.range_slider.blockSignals(True)
             self.range_slider.setRange(min_val, max_val)
             self.range_slider.setValues(min_val, max_val)
             self.range_slider.blockSignals(False)
 
-            # Llama a on_range_changed para actualizar las etiquetas y dibujar la pista por primera vez
             self.on_range_changed(min_val, max_val)
 
     def on_toggle_map_background(self, checked):
