@@ -2,15 +2,92 @@
 import sys
 import numpy as np
 import os
-from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMenuBar, QToolBar, QComboBox)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMenuBar, QToolBar, QComboBox, QLabel, QWidget)
 from PySide6.QtWidgets import QProgressDialog
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtGui import QAction, QColor
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtGui import QAction, QColor, QPainter, QPen, QPalette
+from PySide6.QtCore import Qt, QSettings, Signal, QPoint, QRect
 from OpenGL.GL import *
 from matplotlib import cm  # Usaremos matplotlib para los mapas de colores
 
 from TelemetrySession import TelemetrySession
+
+class QRangeSlider(QWidget):
+    """
+    Un widget de slider con dos manejadores para seleccionar un rango.
+    """
+    rangeChanged = Signal(float, float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(200, 25)
+        self._min_val, self._max_val = 0.0, 1.0
+        self._low_val, self._high_val = 0.0, 1.0
+
+        self._dragged_handle = None  # 'low', 'high', or None
+        self.handle_width = 10
+
+    def setRange(self, min_val, max_val):
+        self._min_val = min_val
+        self._max_val = max_val if max_val > min_val else min_val + 1
+        self.update()
+
+    def setValues(self, low, high):
+        self._low_val = low
+        self._high_val = high
+        self.update()
+
+    def _pos_to_val(self, pos):
+        return self._min_val + (pos / self.width()) * (self._max_val - self._min_val)
+
+    def _val_to_pos(self, val):
+        return self.width() * (val - self._min_val) / (self._max_val - self._min_val)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        bar_rect = QRect(0, self.height() // 2 - 2, self.width(), 4)
+        low_pos = self._val_to_pos(self._low_val)
+        high_pos = self._val_to_pos(self._high_val)
+
+        # Draw background bar
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(80, 80, 90))
+        painter.drawRect(bar_rect)
+
+        # Draw selected range bar
+        painter.setBrush(QColor(0, 120, 215))
+        painter.drawRect(QRect(int(low_pos), bar_rect.y(), int(high_pos - low_pos), bar_rect.height()))
+
+        # Draw handles
+        painter.setBrush(self.palette().light())
+        painter.setPen(self.palette().color(QPalette.Shadow))
+        painter.drawEllipse(QPoint(int(low_pos), bar_rect.center().y() + 1), self.handle_width, self.handle_width)
+        painter.drawEllipse(QPoint(int(high_pos), bar_rect.center().y() + 1), self.handle_width, self.handle_width)
+
+    def mousePressEvent(self, event):
+        low_pos = self._val_to_pos(self._low_val)
+        high_pos = self._val_to_pos(self._high_val)
+        if abs(event.x() - low_pos) < self.handle_width:
+            self._dragged_handle = 'low'
+        elif abs(event.x() - high_pos) < self.handle_width:
+            self._dragged_handle = 'high'
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        if self._dragged_handle:
+            new_val = self._pos_to_val(event.x())
+            if self._dragged_handle == 'low':
+                self._low_val = max(self._min_val, min(new_val, self._high_val))
+            elif self._dragged_handle == 'high':
+                self._high_val = min(self._max_val, max(new_val, self._low_val))
+            self.rangeChanged.emit(self._low_val, self._high_val)
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        self._dragged_handle = None
+        self.update()
 
 class TrackWidget(QOpenGLWidget):
     """
@@ -18,7 +95,6 @@ class TrackWidget(QOpenGLWidget):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.dataframe = None
         self.vertices = None
         self.colors = None
         self.track_bbox = None
@@ -30,39 +106,17 @@ class TrackWidget(QOpenGLWidget):
         self.zoom = 1.0
         self._last_mouse_pos = None
 
-    def setData(self, dataframe, color_column='Speed'):
+    def setData(self, vertices, colors, track_bbox):
         """
-        Recibe el DataFrame, lo procesa y prepara los datos para OpenGL.
-        color_column: columna a usar para colorear los puntos.
+        Recibe los datos ya procesados (vértices, colores, bounding box) y los prepara para OpenGL.
         """
-        if dataframe is None or dataframe.empty or 'Lon' not in dataframe.columns or 'Lat' not in dataframe.columns:
-            return
-
-        self.dataframe = dataframe
-        self.color_column = color_column
-
-        # 1. Extraer coordenadas y calcular el bounding box (caja contenedora) de la pista
-        lon = self.dataframe['Lon'].to_numpy()
-        lat = self.dataframe['Lat'].to_numpy()
-        self.track_bbox = {
-            'min_lon': lon.min(), 'max_lon': lon.max(),
-            'min_lat': lat.min(), 'max_lat': lat.max()
-        }
-
-        # 2. Preparar los vértices para OpenGL (array de puntos [x1, y1, x2, y2, ...])
-        # Usamos Lon para X y Lat para Y.
-        self.vertices = np.vstack((lon, lat)).T.flatten()
-
-        # 3. Mapear la columna seleccionada a un color
-        if color_column in self.dataframe.columns:
-            values = self.dataframe[color_column].to_numpy()
-            # Normalizamos la columna (0.0 a 1.0) para poder aplicarle un mapa de color
-            norm_values = (values - values.min()) / (values.max() - values.min()) if values.max() > values.min() else np.zeros_like(values)
-            self.colors = cm.RdYlGn(norm_values)
-        else:
-            # Fallback: todo gris
-            self.colors = np.ones((len(self.dataframe), 4)) * 0.5
-
+        self.vertices = vertices
+        self.colors = colors
+        self.track_bbox = track_bbox
+        # Reseteamos la vista al cargar nuevos datos
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self.zoom = 1.0
         self.update() # Le decimos al widget que necesita redibujarse
 
     def initializeGL(self):
@@ -144,7 +198,7 @@ class TrackWidget(QOpenGLWidget):
             glColorPointer(4, GL_FLOAT, 0, self.colors)
             
             # Dibujamos todos los puntos de una sola vez (muy eficiente)
-            glDrawArrays(GL_POINTS, 0, len(self.dataframe))
+            glDrawArrays(GL_POINTS, 0, len(self.vertices) // 2)
 
             glDisableClientState(GL_COLOR_ARRAY)
             glDisableClientState(GL_VERTEX_ARRAY)
@@ -223,16 +277,12 @@ class TrackWidget(QOpenGLWidget):
 
         self.update()
 
-    def update_colors(self, color_column):
-        """Actualiza los colores según la columna seleccionada."""
-        if self.dataframe is not None:
-            self.setData(self.dataframe, color_column)
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Visor de Telemetría iRacing")
         self.setGeometry(100, 100, 1200, 900)
+        self.dataframe = None # MainWindow es la dueña del dataframe
 
         # Creamos nuestro widget de OpenGL y lo ponemos como widget central
         self.track_widget = TrackWidget(self)
@@ -247,6 +297,16 @@ class MainWindow(QMainWindow):
         self.color_combo.setToolTip("Columna para colorear los puntos")
         self.color_combo.currentTextChanged.connect(self.on_color_column_changed)
         self.toolbar.addWidget(self.color_combo)
+
+        # Controles para el rango de colores
+        self.toolbar.addSeparator()
+        self.min_value_label = QLabel("Min: N/A")
+        self.range_slider = QRangeSlider(self)
+        self.max_value_label = QLabel("Max: N/A")
+        self.toolbar.addWidget(self.min_value_label)
+        self.toolbar.addWidget(self.range_slider)
+        self.toolbar.addWidget(self.max_value_label)
+        self.range_slider.rangeChanged.connect(self.on_range_changed)
 
         # Configuración para archivos recientes
         self.settings = QSettings("MiEmpresa", "SimracingTelemetryAnalyzer")
@@ -293,15 +353,16 @@ class MainWindow(QMainWindow):
             session = TelemetrySession(file_name)
             if not session.dataframe.empty:
                 session.filter_driving_columns()
+                self.dataframe = session.dataframe
+
                 # Llenar el combo con columnas numéricas
-                numeric_cols = session.dataframe.select_dtypes(include=[np.number]).columns.tolist()
+                numeric_cols = self.dataframe.select_dtypes(include=[np.number]).columns.tolist()
                 self.color_combo.clear()
                 self.color_combo.addItems(numeric_cols)
+
                 # Seleccionar 'Speed' si existe
                 if 'Speed' in numeric_cols:
                     self.color_combo.setCurrentText('Speed')
-                # Pasar la columna seleccionada al widget
-                self.track_widget.setData(session.dataframe, self.color_combo.currentText())
                 self.add_to_recent_files(file_name)
             else:
                 print("Error: No se cargaron datos de telemetría.")
@@ -340,4 +401,68 @@ class MainWindow(QMainWindow):
 
     def on_color_column_changed(self, column_name):
         """Callback cuando el usuario cambia la columna de color."""
-        self.track_widget.update_colors(column_name)
+        if column_name and self.dataframe is not None:
+            self.update_color_controls()
+
+    def on_range_changed(self, low, high):
+        """Callback cuando el usuario mueve el QRangeSlider."""
+        if self.dataframe is not None:
+            self.min_value_label.setText(f"Min: {low:.2f}")
+            self.max_value_label.setText(f"Max: {high:.2f}")
+            self.process_and_update_track()
+
+    def update_color_controls(self):
+        """Actualiza el slider y las etiquetas para la columna de color actual."""
+        df = self.dataframe
+        column_name = self.color_combo.currentText()
+        if df is not None and column_name in df.columns:
+            min_val = df[column_name].min()
+            max_val = df[column_name].max()
+
+            self.range_slider.blockSignals(True)
+            self.range_slider.setRange(min_val, max_val)
+            self.range_slider.setValues(min_val, max_val)
+            self.range_slider.blockSignals(False)
+
+            # Llama a on_range_changed para actualizar las etiquetas y dibujar la pista por primera vez
+            self.on_range_changed(min_val, max_val)
+
+    def process_and_update_track(self):
+        """
+        Procesa el dataframe actual basado en los controles de la UI y envía los datos al TrackWidget.
+        """
+        df = self.dataframe
+        column_name = self.color_combo.currentText()
+        if df is None or df.empty or not column_name:
+            self.track_widget.setData(None, None, None)
+            return
+
+        # Obtener el rango del slider
+        vmin = self.range_slider._low_val
+        vmax = self.range_slider._high_val
+
+        # Guardar zoom y paneo actuales
+        pan_x = self.track_widget.pan_x
+        pan_y = self.track_widget.pan_y
+        zoom = self.track_widget.zoom
+
+        # 1. Preparar vértices y bounding box
+        lon = df['Lon'].to_numpy()
+        lat = df['Lat'].to_numpy()
+        vertices = np.vstack((lon, lat)).T.flatten()
+        track_bbox = {'min_lon': lon.min(), 'max_lon': lon.max(), 'min_lat': lat.min(), 'max_lat': lat.max()}
+
+        # 2. Preparar colores
+        values = df[column_name].to_numpy()
+        norm_values = (values - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(values)
+        norm_values = np.clip(norm_values, 0, 1)
+        colors = cm.RdYlGn(norm_values)
+
+        # 3. Enviar datos al widget para que se dibuje
+        self.track_widget.setData(vertices, colors, track_bbox)
+
+        # Restaurar zoom y paneo
+        self.track_widget.pan_x = pan_x
+        self.track_widget.pan_y = pan_y
+        self.track_widget.zoom = zoom
+        self.track_widget.update()
