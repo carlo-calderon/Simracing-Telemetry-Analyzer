@@ -27,7 +27,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Simracing Telemetry Analizer")
         self.setGeometry(100, 100, 1200, 900)
         self.session = None  # Inicializamos la sesión de telemetría
-        self.ZOOM = 17  # Zoom por defecto para las teselas del mapa
+        self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
 
         self.show_low_range = True
         self.show_high_range = True
@@ -147,6 +147,7 @@ class MainWindow(QMainWindow):
             print(f"INFO: Cargando datos de telemetría... {self.session}")
             if not self.session.dataframe.empty:
                 self.session.filter_driving_columns()
+                self.session.remove_problematic_rows()
                 self.dataframe = self.session.dataframe
 
                 # Llenar el combo con columnas numéricas
@@ -176,6 +177,7 @@ class MainWindow(QMainWindow):
             file_name, _ = QFileDialog.getSaveFileName(self, "Guardar como CSV", "", "CSV Files (*.csv)")
             if file_name:
                 self.session.save_to_csv(file_name)
+                self.session.resumen()
         else:
             print("No hay sesión de telemetría cargada.")
 

@@ -23,6 +23,7 @@ class TrackWidget(QOpenGLWidget):
         self.vertices = None
         self.colors = None
         self.track_bbox = None
+        self.map_bbox = None
         self.aspect_ratio = 1.0
 
         # Variables para paneo y zoom

@@ -41,6 +41,34 @@ class TelemetrySession:
             print(f"INFO: Columnas encontradas: {self.dataframe.columns.tolist()}")
             print(self.dataframe[columnas_existentes].head(10).to_string())
 
+            # Imprimir mínimos y máximos de las columnas relevantes
+            print("\n--- MÍNIMOS Y MÁXIMOS DE COLUMNAS RELEVANTES ---")
+            for col in columnas_existentes:
+                min_val = self.dataframe[col].min()
+                max_val = self.dataframe[col].max()
+                mean_val = self.dataframe[col].mean()
+                print(f"{col}: min={min_val}, max={max_val}, mean={mean_val:.2f}")
+    
+    def remove_problematic_rows(self):
+        if self.dataframe.empty:
+            return 
+        
+        # Imprimir las primeras 10 filas problemáticas: Lat o Lon < promedio o < 10000
+        if 'Lat' in self.dataframe.columns and 'Lon' in self.dataframe.columns:
+            mask = (
+                ((self.dataframe['Lat'] < 0.01) & (self.dataframe['Lat'] > -0.01) &
+                (self.dataframe['Lon'] < 0.01) & (self.dataframe['Lon'] > -0.01)) 
+            )
+            problematic = self.dataframe[mask]
+            print("\n--- PRIMERAS 10 FILAS PROBLEMÁTICAS (Lat o Lon < promedio o < 10000) ---")
+            print(problematic.head(10).to_string(index=False))
+
+            self.dataframe = self.dataframe[~mask]
+            print(f"INFO: Se eliminaron {len(problematic)} filas problemáticas.")
+        else:
+            print("INFO: Las columnas 'Lat' o 'Lon' no están presentes para la eliminación de filas problemáticas.")
+
+
     def analyze_lockup(self, lockup_threshold=1.0):
         """
         Analiza el DataFrame para crear nuevas columnas para bloqueo y patinaje.
