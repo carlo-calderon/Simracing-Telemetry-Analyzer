@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar, QStyle)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar, QStyle, QDockWidget)
 from PySide6.QtGui import QAction, QIcon, QColor
 from PySide6.QtCore import Qt, QSettings
 from matplotlib import cm
@@ -10,7 +10,8 @@ import math
 
 from TelemetrySession import TelemetrySession
 from RangeSlider import QRangeSlider
-from TrackViewer import TrackWidget  # Asegúrate de que TrackWidget esté en TrackViewer.py
+from TrackViewer import TrackWidget
+from LapsTimeTable import LapsTimeTable
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -66,7 +67,7 @@ class MainWindow(QMainWindow):
             self.file_menu.addAction(action)
 
         # Botón toggle para mostrar/ocultar fondo de mapa
-        self.show_map_action = QAction(QIcon("google_maps.png"), "Cargar fondo", self)
+        self.show_map_action = QAction(QIcon("./icons/google_maps.png"), "Cargar fondo", self)
         self.show_map_action.setCheckable(True)
         self.show_map_action.setChecked(False)
         self.show_map_action.toggled.connect(self.on_toggle_map_background)
@@ -98,6 +99,12 @@ class MainWindow(QMainWindow):
         self.statusbar.addPermanentWidget(self.coord_label)
 
         self.track_widget.mouse_coord_changed.connect(self.update_statusbar_coords)
+
+        self.laps_table_widget = LapsTimeTable(self)
+        laps_dock_widget = QDockWidget("Tiempos por Vuelta", self)
+        laps_dock_widget.setWidget(self.laps_table_widget)
+        laps_dock_widget.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.RightDockWidgetArea, laps_dock_widget)
 
         self.update_recent_files_menu()
 
@@ -142,6 +149,11 @@ class MainWindow(QMainWindow):
                 # Seleccionar 'Speed' si existe
                 if 'Speed' in numeric_cols:
                     self.color_combo.setCurrentText('Speed')
+
+                # Actualizar la tabla de tiempos por vuelta
+                if self.session.laps_df is not None:
+                    self.laps_table_widget.update_data(self.session.laps_df)
+
                 self.add_to_recent_files(file_name)
             else:
                 print("Error: No se cargaron datos de telemetría.")
