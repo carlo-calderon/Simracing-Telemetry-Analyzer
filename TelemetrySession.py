@@ -2,12 +2,17 @@ import irsdk
 import pandas as pd
 
 class TelemetrySession:
-    def __init__(self, ibt_path: str):
+    def __init__(self, ibt_path: str = None):
+        self.ibt_path = ibt_path
+        self.dataframe = None
+        if not ibt_path is None:
+            self.load_telemetry(ibt_path)
+            self.laps_df = self.times_by_laps()
+
+    def load_telemetry(self, ibt_path: str):
         self.ibt_path = ibt_path
         self.dataframe = pd.DataFrame()
-        self._load_telemetry()
 
-    def _load_telemetry(self):
         ibt = irsdk.IBT()
         try:
             ibt.open(self.ibt_path)
@@ -35,6 +40,52 @@ class TelemetrySession:
             columnas_existentes = [col for col in columnas_relevantes if col in self.dataframe.columns]
             print(f"INFO: Columnas encontradas: {self.dataframe.columns.tolist()}")
             print(self.dataframe[columnas_existentes].head(10).to_string())
+
+    def analyze_lockup(self, lockup_threshold=1.0):
+        """
+        Analiza el DataFrame para crear nuevas columnas para bloqueo y patinaje.
+        """
+        if self.dataframe.empty:
+            return
+
+        print("INFO: Analizando bloqueo de frenos...")
+        df = self.dataframe
+        # --- Análisis de Bloqueo de Ruedas ---
+        # Definimos una velocidad mínima para considerar un bloqueo
+        speed_threshold_mps = 5.0 # m/s (equivalente a 18 km/h)
+        # Creamos una columna booleana para cada rueda
+        # Una rueda está bloqueada si su velocidad es casi cero mientras el coche se mueve y se está frenando.
+        if all(k in df for k in ['Brake', 'Speed', 'LFspeed']):
+            df['LF_Lockup'] = ((df['Brake'] > 0.1) & (df['Speed'] > speed_threshold_mps) & (df['LFspeed'] < lockup_threshold)).astype('uint8')
+        if all(k in df for k in ['Brake', 'Speed', 'RFspeed']):
+            df['RF_Lockup'] = ((df['Brake'] > 0.1) & (df['Speed'] > speed_threshold_mps) & (df['RFspeed'] < lockup_threshold)).astype('uint8')
+        if all(k in df for k in ['Brake', 'Speed', 'LRspeed']):
+            df['LR_Lockup'] = ((df['Brake'] > 0.1) & (df['Speed'] > speed_threshold_mps) & (df['LRspeed'] < lockup_threshold)).astype('uint8')
+        if all(k in df for k in ['Brake', 'Speed', 'RRspeed']):
+            df['RR_Lockup'] = ((df['Brake'] > 0.1) & (df['Speed'] > speed_threshold_mps) & (df['RRspeed'] < lockup_threshold)).astype('uint8')
+
+        self.dataframe = df
+        print("INFO: Análisis bloqueo completado. Nuevas columnas añadidas.")
+
+    def analyze_spin(self, spin_threshold_pct=15.0):
+        if self.dataframe.empty:
+            return
+
+        print("INFO: Patinaje de Ruedas (asumiendo Tracción Trasera)...")
+        df = self.dataframe
+
+        # --- Análisis de Patinaje de Ruedas (asumiendo Tracción Trasera) ---
+        if all(k in df for k in ['Throttle', 'LRspeed', 'RRspeed', 'LFspeed', 'RFspeed']):
+            # Calculamos la velocidad media de cada eje
+            driven_wheel_speed = (df['LRspeed'] + df['RRspeed']) / 2
+            free_wheel_speed = (df['LFspeed'] + df['RFspeed']) / 2
+            # Hay patinaje si la velocidad de las ruedas motrices supera a las libres en un %
+            # y estamos acelerando. Sumamos un valor pequeño para evitar división por cero.
+            speed_diff_pct = ((driven_wheel_speed - free_wheel_speed) / (free_wheel_speed + 0.01)) * 100
+            df['WheelSpin'] = ((df['Throttle'] > 0.1) & (speed_diff_pct > spin_threshold_pct)).astype('uint8')
+        
+        self.dataframe = df
+        print("INFO: Análisis completado. Nuevas columnas añadidas.")
 
     def save_to_csv(self, ruta_csv: str):
         """
@@ -73,18 +124,21 @@ class TelemetrySession:
         else:
             print("ADVERTENCIA: El DataFrame está vacío. No se guardó ningún archivo.")
             
-    def filter_driving_columns(self):
-        """
-        Keep only the columns necessary for driving analysis in the DataFrame.
-        Columns: SessionTime, Lap, Speed, RPM, Throttle, Brake, Lat, Lon, Alt, Steer, Yaw, Pitch, Roll,
-        SteeringWheelAngle, SlipAngle, YawRate, WheelSlip (if available)
-        """
+    def filter_driving_columns(self, analyze_lockup=True, analyze_spin=True):
+        if analyze_lockup:
+            self.analyze_lockup()
+        if analyze_spin:
+            self.analyze_spin()
+
         required_columns = [
             'SessionTime', 'Lap', 'Speed', 'RPM', 'Throttle', 'Brake',
             'Lat', 'Lon', 'Alt',      # Position
             'SteeringWheelAngle',     # Steering wheel angle
             'Yaw', 'Pitch', 'Roll',   # Car rotation
-            'YawRate'  # Slippage indicators (if available)
+            'YawRate',  # Slippage indicators (if available)
+            'LapDistPct', 'LapDist',
+            # Columnas creadas en analyze_driving_inputs
+            'LF_Lockup', 'RF_Lockup', 'LR_Lockup', 'RR_Lockup', 'WheelSpin'
         ]
         existing_columns = [col for col in required_columns if col in self.dataframe.columns]
         missing_columns = [col for col in required_columns if col not in self.dataframe.columns]
@@ -92,3 +146,55 @@ class TelemetrySession:
         print(f"INFO: DataFrame filtered. Current columns: {self.dataframe.columns.tolist()}")
         if missing_columns:
             print(f"WARNING: The following required columns were not found in the DataFrame: {', '.join(missing_columns)}")
+    
+    def times_by_laps(self, sector_percents=[0.25, 0.5, 0.75]):
+        """
+        Calcula los tiempos de vuelta y de sectores para cada vuelta.
+        sector_percents: lista de porcentajes (ejemplo: [0.25, 0.5, 0.75])
+        Devuelve un DataFrame con columnas: Lap, Time, S1, S2, ..., Sn
+        """
+        if self.dataframe is None or self.dataframe.empty:
+            print("No hay datos de telemetría cargados.")
+            return pd.DataFrame()
+
+        df = self.dataframe
+        if 'Lap' not in df.columns or 'SessionTime' not in df.columns or 'LapDistPct' not in df.columns:
+            print("Faltan columnas necesarias: Lap, SessionTime o LapDistPct.")
+            return pd.DataFrame()
+
+        laps = []
+        for lap_num in sorted(df['Lap'].unique()):
+            lap_df = df[df['Lap'] == lap_num]
+            if lap_df.empty:
+                continue
+
+            # Tiempos de inicio y fin de la vuelta
+            t0 = lap_df['SessionTime'].iloc[0]
+            t1 = lap_df['SessionTime'].iloc[-1]
+            lap_time = t1 - t0
+
+            # Calcular tiempos de sectores
+            sector_times = []
+            prev_pct = 0.0
+            prev_time = t0
+            for i, pct in enumerate(sector_percents):
+                # Buscar el primer índice donde LapDistPct >= pct
+                sector_df = lap_df[lap_df['LapDistPct'] >= pct]
+                if not sector_df.empty:
+                    sector_time = sector_df['SessionTime'].iloc[0]
+                else:
+                    sector_time = t1  # Si no hay, usar fin de vuelta
+                sector_times.append(sector_time - prev_time)
+                prev_time = sector_time
+                prev_pct = pct
+            # Último sector: desde el último porcentaje hasta el final de la vuelta
+            sector_times.append(t1 - prev_time)
+
+            # Construir fila
+            row = {'Lap': lap_num, 'Time': lap_time}
+            for i, st in enumerate(sector_times):
+                row[f'S{i+1}'] = st
+            laps.append(row)
+
+        laps_df = pd.DataFrame(laps)
+        return laps_df

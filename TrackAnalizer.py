@@ -17,7 +17,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Simracing Telemetry Analizer")
         self.setGeometry(100, 100, 1200, 900)
-        self.dataframe = None # MainWindow es la dueña del dataframe
+        self.session = None  # Inicializamos la sesión de telemetría
         self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
 
         self.show_low_range = True
@@ -80,6 +80,12 @@ class MainWindow(QMainWindow):
         self.reset_view_action.triggered.connect(self.on_reset_view)
         self.toolbar.addAction(self.reset_view_action)
 
+        # Acción Guardar como
+        self.save_as_action = QAction(QIcon("./icons/save.ico"), "Guardar como CSV", self)
+        self.save_as_action.setToolTip("Guardar como CSV")
+        self.save_as_action.triggered.connect(self.save_as_csv)
+        self.toolbar.addAction(self.save_as_action)
+
         self.Maps_API_KEY = "AIzaSyBwn0dzu6ae97g4W3ArNRAHLr-cqOvlrUQ"  # Reemplaza con tu clave de API de Google Maps
         
         self.map_image_cache = None  # Para guardar la imagen descargada
@@ -122,10 +128,11 @@ class MainWindow(QMainWindow):
         QApplication.processEvents()
 
         try:
-            session = TelemetrySession(file_name)
-            if not session.dataframe.empty:
-                session.filter_driving_columns()
-                self.dataframe = session.dataframe
+            self.session = TelemetrySession(file_name)
+            print(f"INFO: Cargando datos de telemetría... {self.session}")
+            if not self.session.dataframe.empty:
+                self.session.filter_driving_columns()
+                self.dataframe = self.session.dataframe
 
                 # Llenar el combo con columnas numéricas
                 numeric_cols = self.dataframe.select_dtypes(include=[np.number]).columns.tolist()
@@ -143,6 +150,14 @@ class MainWindow(QMainWindow):
         finally:
             progress_dialog.cancel()
             del progress_dialog
+
+    def save_as_csv(self):
+        if hasattr(self, "session") and self.session is not None:
+            file_name, _ = QFileDialog.getSaveFileName(self, "Guardar como CSV", "", "CSV Files (*.csv)")
+            if file_name:
+                self.session.save_to_csv(file_name)
+        else:
+            print("No hay sesión de telemetría cargada.")
 
     def add_to_recent_files(self, file_name):
         files = self.settings.value("recentFiles", [], type=list)
