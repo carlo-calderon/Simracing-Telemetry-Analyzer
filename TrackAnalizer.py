@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+'''
+File: TrackAnalizer.py
+Created on 2025-06-29
+@author: Carlo Calderón Becerra
+@company: CarcaldeF1
+'''
+
 import os
 import numpy as np
 from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar, QStyle, QDockWidget)
@@ -19,7 +27,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Simracing Telemetry Analizer")
         self.setGeometry(100, 100, 1200, 900)
         self.session = None  # Inicializamos la sesión de telemetría
-        self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
+        self.ZOOM = 17  # Zoom por defecto para las teselas del mapa
 
         self.show_low_range = True
         self.show_high_range = True
@@ -237,17 +245,15 @@ class MainWindow(QMainWindow):
     def on_toggle_map_background(self, checked):
         """Muestra u oculta el fondo de mapa satelital."""
         if checked:
-            # Solo descarga si no está en caché o el bbox cambió
-            if self.map_image_cache is None or self.map_bbox_cache != self.current_bbox():
-                bbox = self.current_bbox()
-                if bbox is not None:
-                    self.map_image_cache = self.fetch_map_tiles_and_stitch(bbox, self.ZOOM)
-                    self.map_bbox_cache = bbox
-            # Actualiza el fondo en el widget
-            self.track_widget.set_background_image(self.map_image_cache)
+            current_track_bbox = self.current_bbox()
+            if current_track_bbox is not None:
+                # Obtenemos la imagen Y el bbox real del mapa
+                self.map_image_cache, self.map_bbox_cache = self.fetch_map_tiles_and_stitch(current_track_bbox, self.ZOOM)
+                self.process_and_update_track() # Volvemos a procesar todo con el nuevo mapa
         else:
-            self.track_widget.set_background_image(None)
-        self.track_widget.update()
+            self.map_image_cache = None
+            self.map_bbox_cache = None
+            self.process_and_update_track()
 
     def current_bbox(self):
         """Devuelve el bounding box actual de la pista."""
@@ -321,8 +327,14 @@ class MainWindow(QMainWindow):
         self.range_slider.set_edge_colors(min_edge_qcolor, max_edge_qcolor)
 
         # 4. Enviar datos al TrackWidget
-        map_image = self.map_image_cache if self.show_map_action.isChecked() else None
-        self.track_widget.setData(vertices, colors, track_bbox, map_image)
+        map_image = None
+        map_bbox = None # Inicializamos el bbox del mapa
+        if self.show_map_action.isChecked() and self.map_image_cache is not None:
+             map_image = self.map_image_cache
+             map_bbox = self.map_bbox_cache # Usamos el bbox del mapa cacheado
+
+        #map_image = self.map_image_cache if self.show_map_action.isChecked() else None
+        self.track_widget.setData(vertices, colors, track_bbox, map_image, map_bbox)
 
         # 5. Restaurar vista
         self.track_widget.set_view_state(pan_x, pan_y, zoom)
@@ -335,7 +347,14 @@ class MainWindow(QMainWindow):
         xtile = int((lon_deg + 180.0) / 360.0 * n)
         ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
         return (xtile, ytile)
-    
+
+    def num2deg(self, xtile, ytile, zoom):
+        """ Convierte coordenadas de tesela de Google a coordenadas geográficas. """
+        n = 2.0 ** zoom
+        lon_deg = xtile / n * 360.0 - 180.0
+        lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
+        lat_deg = math.degrees(lat_rad)
+        return (lon_deg, lat_deg)    
    
     def fetch_map_tiles_and_stitch(self, bbox, zoom):
         """
@@ -355,7 +374,15 @@ class MainWindow(QMainWindow):
         
         num_tiles_x = (x_max - x_min) + 1
         num_tiles_y = (y_max - y_min) + 1
+
+        map_min_lon, map_max_lat = self.num2deg(x_min, y_min, zoom)
+        map_max_lon, map_min_lat = self.num2deg(x_max + 1, y_max + 1, zoom)
         
+        map_bbox = {
+            'min_lon': map_min_lon, 'max_lon': map_max_lon,
+            'min_lat': map_min_lat, 'max_lat': map_max_lat
+        }
+
         print(f"INFO: Se descargarán {num_tiles_x * num_tiles_y} teselas ({num_tiles_x}x{num_tiles_y}) para el zoom {zoom}.")
 
         # 2. Crear el lienzo final para unir las imágenes
@@ -401,7 +428,7 @@ class MainWindow(QMainWindow):
         painter.end()
         progress.setValue(num_tiles_x * num_tiles_y)
         print("INFO: Mosaico del mapa completado.")
-        return stitched_image
+        return stitched_image, map_bbox
     
     def update_statusbar_coords(self, lon, lat):
         """

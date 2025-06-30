@@ -40,20 +40,20 @@ class TrackWidget(QOpenGLWidget):
         self.pan_y = 0.0
         self.zoom = 1.0
 
-    def setData(self, vertices, colors, track_bbox, map_image):
+    def setData(self, vertices, colors, track_bbox, map_image, map_bbox):
         """
         Recibe los datos ya procesados (vértices, colores, bounding box) y los prepara para OpenGL.
         """
         self.vertices = vertices
         self.colors = colors
         self.track_bbox = track_bbox
+        self.map_bbox = map_bbox     # El bbox REAL del mapa
         self.map_image = map_image
-
-        self.reset_view() # Reseteamos la vista al cargar nuevos datos
 
         if self.map_image:
             self.update_map_texture()
 
+        self.reset_view() # Reseteamos la vista al cargar nuevos datos
         self.update() # Le decimos al widget que necesita redibujarse
 
     def update_map_texture(self):
@@ -137,7 +137,8 @@ class TrackWidget(QOpenGLWidget):
         Calcula la proyección ortográfica para que la pista se vea a escala
         y encaje perfectamente en la ventana, aplicando paneo y zoom.
         """
-        if self.track_bbox is None:
+        display_bbox = self.map_bbox if self.map_bbox else self.track_bbox
+        if display_bbox is None:
             return
 
         glMatrixMode(GL_PROJECTION)
@@ -152,8 +153,12 @@ class TrackWidget(QOpenGLWidget):
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         
-        self.updateProjection() # Recalculamos la proyección por si los datos cambiaron
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        self.updateProjection() # Llamamos aquí para asegurar que el zoom/pan se aplique
 
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
         self.draw_background_map()
 
         if self.vertices is not None and self.colors is not None:
@@ -172,13 +177,13 @@ class TrackWidget(QOpenGLWidget):
 
     def draw_background_map(self):
         """ Dibuja un rectángulo con la textura del mapa. """
-        if self.map_texture_id is None or self.track_bbox is None:
+        if self.map_texture_id is None or self.map_bbox  is None:
             return
 
         glColor4f(1.0, 1.0, 1.0, 1.0) # Color blanco para no teñir la textura
         glBindTexture(GL_TEXTURE_2D, self.map_texture_id)
         
-        bbox = self.track_bbox
+        bbox = self.map_bbox # Usamos el bbox REAL del mapa
         
         # Dibujamos un quad (rectángulo) usando las coordenadas del bounding box
         glBegin(GL_QUADS)
