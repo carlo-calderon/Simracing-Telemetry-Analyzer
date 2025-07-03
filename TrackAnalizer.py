@@ -474,4 +474,4 @@ class MainWindow(QMainWindow):
 
     def set_distance_slider_range(self, start_pct, end_pct):
         self.distance_slider.setValues(start_pct, end_pct)
-        self.track_widget.update()
+        self.process_and_update_track()
