@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         # --- DOCK WIDGET DERECHO (PARA TIEMPOS Y DISTANCIA) ---
         self.distance_slider = QRangeSlider(self, labels_visible=False)
         self.distance_slider.setToolTip("Filtra los puntos visibles por distancia en la vuelta")
+        self.distance_slider.setFixedHeight(30)
         self.distance_slider.rangeChanged.connect(self.process_and_update_track) # Conectar directamente al procesado
 
         self.laps_table_widget = LapsTimeTable(self)
@@ -129,6 +130,9 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, laps_dock_widget)
 
         self.update_recent_files_menu()
+
+        self.laps_table_widget.sector_percents = [0.25, 0.5, 0.75]  # O la lista real usada
+        self.laps_table_widget.on_sector_selected = self.set_distance_slider_range
 
     def toggle_low_range_visibility(self):
         self.show_low_range = not self.show_low_range
@@ -467,3 +471,7 @@ class MainWindow(QMainWindow):
         Este es el 'slot' que recibe las coordenadas del TrackWidget y actualiza la etiqueta.
         """
         self.coord_label.setText(f"Lon: {lon:.6f}, Lat: {lat:.6f}")
+
+    def set_distance_slider_range(self, start_pct, end_pct):
+        self.distance_slider.setValues(start_pct, end_pct)
+        self.track_widget.update()

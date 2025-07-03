@@ -61,6 +61,8 @@ class LapsTimeTable(QWidget):
             }
         """)
 
+        self.table.horizontalHeader().sectionClicked.connect(self.on_header_clicked)
+
     def format_time(self, total_seconds, remove_leading_zero=False):
         """ Formatea segundos a MM:SS.ss o SS.ss si es menor a un minuto. 
             Si remove_leading_zero=True, elimina el 0 inicial en minutos.
@@ -170,3 +172,32 @@ class LapsTimeTable(QWidget):
         # Ajustar el tamaño de las columnas al contenido
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setStretchLastSection(True)
+
+    def on_header_clicked(self, logicalIndex):
+        # Solo sectores (columna 2 en adelante, es decir, S1, S2, ...)
+        if logicalIndex < 2:
+            return
+
+        col_name = self.table.horizontalHeaderItem(logicalIndex).text()
+        if not col_name.startswith('S'):
+            return
+
+        # Obtener los porcentajes de inicio y fin del sector
+        sector_num = int(col_name[1:])  # S1 -> 1, S2 -> 2, ...
+        # Supón que tienes acceso a la lista de porcentajes (debes pasarla o guardarla)
+        # Ejemplo: self.sector_percents = [0.25, 0.5, 0.75]
+        if not hasattr(self, 'sector_percents'):
+            return
+
+        if sector_num == 1:
+            start_pct = 0.0
+        else:
+            start_pct = self.sector_percents[sector_num - 2]
+        if sector_num - 1 < len(self.sector_percents):
+            end_pct = self.sector_percents[sector_num - 1]
+        else:
+            end_pct = 1.0
+
+        # Emitir señal o llamar callback para ajustar el slider
+        if hasattr(self, 'on_sector_selected'):
+            self.on_sector_selected(start_pct, end_pct)
