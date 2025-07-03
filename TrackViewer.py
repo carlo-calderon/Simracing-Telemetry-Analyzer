@@ -1,4 +1,11 @@
-# TrackViewer.py
+# -*- coding: utf-8 -*-
+'''
+File: TrackViewer.py
+Created on 2025-07-02
+@author: Carlo Calderón Becerra
+@company: CarcaldeF1
+'''
+
 import sys
 import numpy as np
 import os
@@ -54,7 +61,7 @@ class TrackWidget(QOpenGLWidget):
         if self.map_image:
             self.update_map_texture()
 
-        self.reset_view() # Reseteamos la vista al cargar nuevos datos
+        #self.reset_view() # Reseteamos la vista al cargar nuevos datos
         self.update() # Le decimos al widget que necesita redibujarse
 
     def update_map_texture(self):

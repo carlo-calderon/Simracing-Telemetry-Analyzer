@@ -8,7 +8,8 @@ Created on 2025-06-29
 
 import os
 import numpy as np
-from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel, QProgressDialog, QStatusBar, QStyle, QDockWidget)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QFileDialog, QToolBar, QComboBox, QLabel,
+                               QProgressDialog, QStatusBar, QStyle, QDockWidget, QWidget, QVBoxLayout)
 from PySide6.QtGui import QAction, QIcon, QColor
 from PySide6.QtCore import Qt, QSettings
 from matplotlib import cm
@@ -43,13 +44,14 @@ class MainWindow(QMainWindow):
         self.color_combo.setToolTip("Columna para colorear los puntos")
         self.color_combo.currentTextChanged.connect(self.on_color_column_changed)
         self.toolbar.addWidget(self.color_combo)
-        self.toolbar.addSeparator()
-        self.range_slider = QRangeSlider(self)
-        self.toolbar.addWidget(self.range_slider)
 
-        self.range_slider.rangeChanged.connect(self.on_range_changed)
-        self.range_slider.left_bar_clicked.connect(self.toggle_low_range_visibility)
-        self.range_slider.right_bar_clicked.connect(self.toggle_high_range_visibility)
+        self.toolbar.addSeparator()
+        self.color_range_slider  = QRangeSlider(self, labels_visible=True)
+        self.toolbar.addWidget(self.color_range_slider )
+
+        self.color_range_slider .rangeChanged.connect(self.on_range_changed)
+        self.color_range_slider .left_bar_clicked.connect(self.toggle_low_range_visibility)
+        self.color_range_slider .right_bar_clicked.connect(self.toggle_high_range_visibility)
 
         # Configuración para archivos recientes
         self.settings = QSettings("CarcaldeF1", "SimracingTelemetryAnalyzer")
@@ -108,9 +110,21 @@ class MainWindow(QMainWindow):
 
         self.track_widget.mouse_coord_changed.connect(self.update_statusbar_coords)
 
+        # --- DOCK WIDGET DERECHO (PARA TIEMPOS Y DISTANCIA) ---
+        self.distance_slider = QRangeSlider(self, labels_visible=False)
+        self.distance_slider.setToolTip("Filtra los puntos visibles por distancia en la vuelta")
+        self.distance_slider.rangeChanged.connect(self.process_and_update_track) # Conectar directamente al procesado
+
         self.laps_table_widget = LapsTimeTable(self)
+
+        dock_container_widget = QWidget()
+        dock_layout = QVBoxLayout(dock_container_widget)
+#        dock_layout.addWidget(QLabel("Filtro por Distancia (m):")) # Etiqueta para el nuevo slider
+        dock_layout.addWidget(self.distance_slider)
+        dock_layout.addWidget(self.laps_table_widget)
+
         laps_dock_widget = QDockWidget("Tiempos por Vuelta", self)
-        laps_dock_widget.setWidget(self.laps_table_widget)
+        laps_dock_widget.setWidget(dock_container_widget)
         laps_dock_widget.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.addDockWidget(Qt.RightDockWidgetArea, laps_dock_widget)
 
@@ -158,11 +172,19 @@ class MainWindow(QMainWindow):
                 # Seleccionar 'Speed' si existe
                 if 'Speed' in numeric_cols:
                     self.color_combo.setCurrentText('Speed')
+                self.update_color_controls()
 
                 # Actualizar la tabla de tiempos por vuelta
                 if self.session.laps_df is not None:
                     self.laps_table_widget.update_data(self.session.laps_df)
 
+                if 'LapDistPct' in self.dataframe.columns:
+                    pct_min = self.dataframe['LapDistPct'].min()
+                    pct_max = self.dataframe['LapDistPct'].max()
+                    self.distance_slider.setRange(pct_min, pct_max)
+                    self.distance_slider.setValues(pct_min, pct_max)
+
+                self.track_widget.reset_view()
                 self.add_to_recent_files(file_name)
             else:
                 print("Error: No se cargaron datos de telemetría.")
@@ -235,12 +257,12 @@ class MainWindow(QMainWindow):
 
             # Puedes elegir la paleta según la columna si lo deseas
             colormap = cm.get_cmap('RdYlGn')  # O cualquier otra lógica
-            self.range_slider.setColormap(colormap)
+            self.color_range_slider .setColormap(colormap)
 
-            self.range_slider.blockSignals(True)
-            self.range_slider.setRange(min_val, max_val)
-            self.range_slider.setValues(min_val, max_val)
-            self.range_slider.blockSignals(False)
+            self.color_range_slider .blockSignals(True)
+            self.color_range_slider .setRange(min_val, max_val)
+            self.color_range_slider .setValues(min_val, max_val)
+            self.color_range_slider .blockSignals(False)
 
             self.on_range_changed(min_val, max_val)
 
@@ -275,10 +297,12 @@ class MainWindow(QMainWindow):
             self.track_widget.setData(None, None, None, None) 
             return
 
-        vmin = self.range_slider._low_val
-        vmax = self.range_slider._high_val
-        pan_x, pan_y, zoom = self.track_widget.get_view_state()
+        vmin = self.color_range_slider._low_val
+        vmax = self.color_range_slider._high_val
+        dist_min = self.distance_slider._low_val
+        dist_max = self.distance_slider._high_val
 
+        pan_x, pan_y, zoom = self.track_widget.get_view_state()
         # 1. Preparar vértices y bounding box (esto está bien)
         lon = df['Lon'].to_numpy()
         lat = df['Lat'].to_numpy()
@@ -287,7 +311,7 @@ class MainWindow(QMainWindow):
 
         # 2. --- LÓGICA DE COLORES DINÁMICA (VERSIÓN CORREGIDA) ---
         values = df[column_name].to_numpy()
-        colormap = self.range_slider.colormap
+        colormap = self.color_range_slider .colormap
 
         # a. Normalizar los valores que están DENTRO del rango para aplicar el gradiente
         range_width = vmax - vmin if vmax > vmin else 1.0
@@ -326,7 +350,13 @@ class MainWindow(QMainWindow):
         # --- FIN DE LA LÓGICA DE COLORES ---
 
         # 3. Actualizar el fondo del Range Slider
-        self.range_slider.set_edge_colors(min_edge_qcolor, max_edge_qcolor)
+        self.color_range_slider .set_edge_colors(min_edge_qcolor, max_edge_qcolor)
+
+        # Filtro de distancia en la vuelta
+        if 'LapDistPct' in df.columns:
+            lap_pct_values = df['LapDistPct'].to_numpy()
+            distance_mask_out = (lap_pct_values < dist_min) | (lap_pct_values > dist_max)
+            colors[distance_mask_out, 3] = 0
 
         # 4. Enviar datos al TrackWidget
         map_image = None

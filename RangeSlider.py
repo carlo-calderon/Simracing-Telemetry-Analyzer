@@ -1,4 +1,11 @@
-# RangeSlider.py
+# -*- coding: utf-8 -*-
+'''
+File: RangeSlider.py
+Created on 2025-07-02
+@author: Carlo Calderón Becerra
+@company: CarcaldeF1
+'''
+
 from PySide6.QtWidgets import QWidget, QToolTip
 from PySide6.QtGui import QPainter, QColor, QPalette, QImage, QFont, QPen, QRadialGradient
 from PySide6.QtCore import Qt, Signal, QPoint, QRect, QPointF
@@ -9,8 +16,9 @@ class QRangeSlider(QWidget):
     left_bar_clicked = Signal()
     right_bar_clicked = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, labels_visible=True):
         super().__init__(parent)
+        self.labels_visible = labels_visible
         self.setMinimumSize(250, 60)
         self.setMouseTracking(True)
         self._min_val, self._max_val = 0.0, 1.0
@@ -19,10 +27,13 @@ class QRangeSlider(QWidget):
         self.handle_diameter = 16
         self.margin = self.handle_diameter // 2
         self.colormap = None
-        
-        # Nuevos atributos para los colores de los extremos
         self._min_edge_color = QColor(80, 80, 90)
         self._max_edge_color = QColor(80, 80, 90)
+
+    def set_labels_visible(self, visible: bool):
+        """ Permite mostrar u ocultar las etiquetas de texto del slider. """
+        self.labels_visible = visible
+        self.update()
 
     def setColormap(self, colormap):
         self.colormap = colormap
@@ -106,62 +117,63 @@ class QRangeSlider(QWidget):
             painter.setPen(QPen(QColor(50,50,50), 1))
             painter.drawEllipse(QPointF(pos, self.height() // 2), handle_radius, handle_radius)
 
-        font = self.font()
-        font.setPointSize(8)
-        font.setBold(True)
-        painter.setFont(font)
-        
-        for val, pos in [(self._low_val, low_pos), (self._high_val, high_pos)]:
-            text = f"{val:.2f}"
-            metrics = painter.fontMetrics()
-            text_rect = metrics.boundingRect(text)
+        if self.labels_visible:
+            font = self.font()
+            font.setPointSize(8)
+            font.setBold(True)
+            painter.setFont(font)
             
-            bubble_w = text_rect.width() + 6
-            bubble_h = text_rect.height() + 2
-            bubble_x = pos - bubble_w / 2
-            bubble_y = bar_y - bubble_h - 5
+            for val, pos in [(self._low_val, low_pos), (self._high_val, high_pos)]:
+                text = f"{val:.2f}"
+                metrics = painter.fontMetrics()
+                text_rect = metrics.boundingRect(text)
+                
+                bubble_w = text_rect.width() + 6
+                bubble_h = text_rect.height() + 2
+                bubble_x = pos - bubble_w / 2
+                bubble_y = bar_y - bubble_h - 5
 
-            bubble_x = max(0, min(bubble_x, self.width() - bubble_w))
-            bubble_rect = QRect(int(bubble_x), int(bubble_y), bubble_w, bubble_h)
-            
-            if self.colormap:
-                full_range = self._max_val - self._min_val
-                norm_val = (val - self._min_val) / full_range if full_range > 0 else 0
-                color_val = QColor.fromRgbF(*self.colormap(norm_val))
-                text_color = color_val.darker(150)
-            else:
-                text_color = self.palette().color(QPalette.Text)
-            
+                bubble_x = max(0, min(bubble_x, self.width() - bubble_w))
+                bubble_rect = QRect(int(bubble_x), int(bubble_y), bubble_w, bubble_h)
+                
+                if self.colormap:
+                    full_range = self._max_val - self._min_val
+                    norm_val = (val - self._min_val) / full_range if full_range > 0 else 0
+                    color_val = QColor.fromRgbF(*self.colormap(norm_val))
+                    text_color = color_val.darker(150)
+                else:
+                    text_color = self.palette().color(QPalette.Text)
+                
+                painter.setBrush(QColor(240, 240, 240))
+                painter.setPen(QPen(QColor(150,150,150), 1))
+                painter.drawRoundedRect(bubble_rect, 5, 5)
+                painter.setPen(text_color)
+                painter.drawText(bubble_rect, Qt.AlignCenter, text)
+
+            font.setPointSize(8)
+            font.setBold(False)
+            painter.setFont(font)
+            metrics = painter.fontMetrics()
             painter.setBrush(QColor(240, 240, 240))
             painter.setPen(QPen(QColor(150,150,150), 1))
-            painter.drawRoundedRect(bubble_rect, 5, 5)
-            painter.setPen(text_color)
-            painter.drawText(bubble_rect, Qt.AlignCenter, text)
 
-        font.setPointSize(8)
-        font.setBold(False)
-        painter.setFont(font)
-        metrics = painter.fontMetrics()
-        painter.setBrush(QColor(240, 240, 240))
-        painter.setPen(QPen(QColor(150,150,150), 1))
+            min_text = f"{self._min_val:.2f}"
+            min_text_rect = metrics.boundingRect(min_text)
+            min_bubble_w = min_text_rect.width() + 8
+            min_bubble_h = min_text_rect.height() + 4
+            min_bubble_rect = QRect(0, self.height() - min_bubble_h, min_bubble_w, min_bubble_h)
+            painter.drawRoundedRect(min_bubble_rect, 4, 4)
 
-        min_text = f"{self._min_val:.2f}"
-        min_text_rect = metrics.boundingRect(min_text)
-        min_bubble_w = min_text_rect.width() + 8
-        min_bubble_h = min_text_rect.height() + 4
-        min_bubble_rect = QRect(0, self.height() - min_bubble_h, min_bubble_w, min_bubble_h)
-        painter.drawRoundedRect(min_bubble_rect, 4, 4)
+            max_text = f"{self._max_val:.2f}"
+            max_text_rect = metrics.boundingRect(max_text)
+            max_bubble_w = max_text_rect.width() + 8
+            max_bubble_h = max_text_rect.height() + 4
+            max_bubble_rect = QRect(self.width() - max_bubble_w, self.height() - max_bubble_h, max_bubble_w, max_bubble_h)
+            painter.drawRoundedRect(max_bubble_rect, 4, 4)
 
-        max_text = f"{self._max_val:.2f}"
-        max_text_rect = metrics.boundingRect(max_text)
-        max_bubble_w = max_text_rect.width() + 8
-        max_bubble_h = max_text_rect.height() + 4
-        max_bubble_rect = QRect(self.width() - max_bubble_w, self.height() - max_bubble_h, max_bubble_w, max_bubble_h)
-        painter.drawRoundedRect(max_bubble_rect, 4, 4)
-
-        painter.setPen(self.palette().color(QPalette.Text))
-        painter.drawText(min_bubble_rect, Qt.AlignCenter, min_text)
-        painter.drawText(max_bubble_rect, Qt.AlignCenter, max_text)
+            painter.setPen(self.palette().color(QPalette.Text))
+            painter.drawText(min_bubble_rect, Qt.AlignCenter, min_text)
+            painter.drawText(max_bubble_rect, Qt.AlignCenter, max_text)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
