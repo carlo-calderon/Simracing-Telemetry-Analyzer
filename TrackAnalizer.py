@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
         self.session = None  # Inicializamos la sesión de telemetría
         self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
 
+        self.selected_lap = None # Para filtrar por una vuelta específica
         self.show_low_range = True
         self.show_high_range = True
 
@@ -133,6 +134,7 @@ class MainWindow(QMainWindow):
 
         self.laps_table_widget.sector_percents = [0.25, 0.5, 0.75]  # O la lista real usada
         self.laps_table_widget.on_sector_selected = self.set_distance_slider_range
+        self.laps_table_widget.lap_filter_changed.connect(self.on_lap_filter_changed)
 
     def toggle_low_range_visibility(self):
         self.show_low_range = not self.show_low_range
@@ -181,6 +183,9 @@ class MainWindow(QMainWindow):
                 # Actualizar la tabla de tiempos por vuelta
                 if self.session.laps_df is not None:
                     self.laps_table_widget.update_data(self.session.laps_df)
+                    self.laps_table_widget.table.clearSelection() # Limpiar selección anterior
+                    self.selected_lap = None # Resetear el filtro de vuelta
+
 
                 if 'LapDistPct' in self.dataframe.columns:
                     pct_min = self.dataframe['LapDistPct'].min()
@@ -246,6 +251,12 @@ class MainWindow(QMainWindow):
             # self.max_value_label.setText(f"Max: {high:.2f}")
             self.process_and_update_track()
 
+    def on_lap_filter_changed(self, lap_number):
+        """Slot para manejar la selección de vuelta desde la LapsTimeTable."""
+        print(f"INFO: Filtro de vuelta cambiado a: {lap_number}")
+        self.selected_lap = lap_number
+        self.process_and_update_track()
+
     def on_reset_view(self):
         """Slot para manejar la acción de resetear la vista."""
         self.track_widget.reset_view()
@@ -295,10 +306,21 @@ class MainWindow(QMainWindow):
         """
         Procesa el dataframe actual basado en los controles de la UI y envía los datos al TrackWidget.
         """
-        df = self.dataframe
+        if self.dataframe is None or self.dataframe.empty:
+            self.track_widget.setData(None, None, None, None, None)
+            self.track_widget.update()
+            return
+
+        # --- NUEVO: Filtrar por vuelta seleccionada ---
+        if self.selected_lap is not None:
+            df = self.dataframe[self.dataframe['Lap'] == self.selected_lap].copy()
+        else:
+            df = self.dataframe
+
         column_name = self.color_combo.currentText()
-        if df is None or df.empty or not column_name:
-            self.track_widget.setData(None, None, None, None) 
+        if df.empty or not column_name:
+            self.track_widget.setData(None, None, None, None, None)
+            self.track_widget.update()
             return
 
         vmin = self.color_range_slider._low_val

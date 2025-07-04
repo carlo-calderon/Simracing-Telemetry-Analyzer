@@ -7,11 +7,13 @@ Created on 2025-06-29
 '''
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 import pandas as pd
 from PySide6.QtGui import QColor
 
 class LapsTimeTable(QWidget):
+    lap_filter_changed = Signal(object)  # Emite el número de vuelta (int) o None
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.layout = QVBoxLayout(self)
@@ -21,6 +23,9 @@ class LapsTimeTable(QWidget):
         self.layout.addWidget(self.table)
         
         self._setup_ui()
+
+        self.on_sector_selected = None
+        self.sector_percents = []
 
     def _setup_ui(self):
         """ Configura la apariencia inicial y el estilo de la tabla. """
@@ -62,6 +67,12 @@ class LapsTimeTable(QWidget):
         """)
 
         self.table.horizontalHeader().sectionClicked.connect(self.on_header_clicked)
+        # --- NUEVO: Configuración de selección de filas ---
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        # Conectamos la señal de cambio de selección del modelo subyacente
+        self.table.selectionModel().selectionChanged.connect(self.on_selection_changed)
+
 
     def format_time(self, total_seconds, remove_leading_zero=False):
         """ Formatea segundos a MM:SS.ss o SS.ss si es menor a un minuto. 
@@ -201,3 +212,29 @@ class LapsTimeTable(QWidget):
         # Emitir señal o llamar callback para ajustar el slider
         if hasattr(self, 'on_sector_selected'):
             self.on_sector_selected(start_pct, end_pct)
+
+    def on_selection_changed(self, selected, deselected):
+        """
+        Se activa cuando cambia la selección de filas en la tabla.
+        Emite la señal `lap_filter_changed`.
+        """
+        selected_indexes = self.table.selectionModel().selectedRows()
+
+        if not selected_indexes:
+            # No hay filas seleccionadas, emitimos None para borrar el filtro
+            self.lap_filter_changed.emit(None)
+            return
+
+        # Obtenemos la primera (y única) fila seleccionada
+        selected_row = selected_indexes[0].row()
+
+        # Ignorar la selección de la fila de tiempo teórico (la última)
+        if selected_row == self.table.rowCount() - 1:
+            self.table.clearSelection()
+            self.lap_filter_changed.emit(None)
+            return
+
+        lap_item = self.table.item(selected_row, 0) # El número de vuelta está en la columna 0
+        if lap_item:
+            lap_number = int(lap_item.text())
+            self.lap_filter_changed.emit(lap_number)
