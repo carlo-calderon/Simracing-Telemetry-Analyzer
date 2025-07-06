@@ -43,6 +43,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(self.toolbar)
         self.color_combo = QComboBox(self)
         self.color_combo.setToolTip("Columna para colorear los puntos")
+        self.color_combo.setFixedWidth(180)  # <-- Ajusta el ancho aquí
         self.color_combo.currentTextChanged.connect(self.on_color_column_changed)
         self.toolbar.addWidget(self.color_combo)
 

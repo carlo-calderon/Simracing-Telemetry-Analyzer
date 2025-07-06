@@ -4,7 +4,9 @@ import pandas as pd
 class TelemetrySession:
     def __init__(self, ibt_path: str = None):
         self.ibt_path = ibt_path
-        self.dataframe = None
+        self.dataframe = pd.DataFrame() # DataFrame con todas las columnas
+        self.laps_df = pd.DataFrame()   # DataFrame con el resumen de vueltas
+
         if not ibt_path is None:
             self.load_telemetry(ibt_path)
             self.laps_df = self.times_by_laps()
@@ -165,6 +167,9 @@ class TelemetrySession:
             'Yaw', 'Pitch', 'Roll',   # Car rotation
             'YawRate',  # Slippage indicators (if available)
             'LapDistPct', 'LapDist',
+            # Columnas de Temperatura
+            'LFtempL', 'LFtempM', 'LFtempR', 'RFtempL', 'RFtempM', 'RFtempR',
+            'LRtempL', 'LRtempM', 'LRtempR', 'RRtempL', 'RRtempM', 'RRtempR',
             # Columnas creadas en analyze_driving_inputs
             'LF_Lockup', 'RF_Lockup', 'LR_Lockup', 'RR_Lockup', 'WheelSpin'
         ]
