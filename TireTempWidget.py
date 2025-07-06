@@ -21,9 +21,12 @@ class TireTempWidget(QWidget):
         self.car_pixmap = QPixmap("./icons/formula_icon.jpeg") 
 
         # Diccionario para guardar los colores calculados para cada neumático
+        default_color = QColor(Qt.gray)
         self.tire_colors = {
-            'LF': QColor(Qt.gray), 'RF': QColor(Qt.gray),
-            'LR': QColor(Qt.gray), 'RR': QColor(Qt.gray)
+            'LF': [default_color, default_color, default_color],
+            'RF': [default_color, default_color, default_color],
+            'LR': [default_color, default_color, default_color],
+            'RR': [default_color, default_color, default_color]
         }
         
         # Mapa de colores para la temperatura (Azul=frío, Rojo=caliente)
@@ -70,35 +73,38 @@ class TireTempWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 1. Dibuja la imagen del coche, escalada para ajustarse al widget
-        painter.drawPixmap(self.rect(), self.car_pixmap)
-        
-        # 2. Dibuja un rectángulo de color sobre cada neumático
-        widget_width = self.width()
-        widget_height = self.height()
+        # 1. Escalar la imagen del coche manteniendo la proporción
+        #    Qt.KeepAspectRatio asegura que no se deforme.
+        scaled_pixmap = self.car_pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
+        # 2. Calcular la posición para centrar la imagen escalada en el widget
+        x = (self.width() - scaled_pixmap.width()) / 2
+        y = (self.height() - scaled_pixmap.height()) / 2
+        image_rect = QRectF(x, y, scaled_pixmap.width(), scaled_pixmap.height())
+
+        # 3. Dibujar la imagen del coche ya escalada y centrada
+        painter.drawPixmap(image_rect.toRect(), scaled_pixmap)
+        
+        # 4. Dibujar los rectángulos de temperatura sobre la imagen escalada
+        painter.setPen(Qt.NoPen)
         for tire_code, rect_pct in self.tire_rects_pct.items():
-            # Convertimos los porcentajes a coordenadas de píxeles reales
-            x = rect_pct.x() * widget_width
-            y = rect_pct.y() * widget_height
-            w = rect_pct.width() * widget_width
-            h = rect_pct.height() * widget_height
+            # Convertimos los porcentajes a coordenadas relativas A LA IMAGEN, no al widget
+            tire_x = image_rect.x() + rect_pct.x() * image_rect.width()
+            tire_y = image_rect.y() + rect_pct.y() * image_rect.height()
+            tire_w = rect_pct.width() * image_rect.width()
+            tire_h = rect_pct.height() * image_rect.height()
             
-            # Ancho de cada una de las 3 franjas de temperatura
-            sub_rect_width = w / 3
+            final_rect = QRectF(tire_x, tire_y, tire_w, tire_h)
             
-            # Obtenemos los 3 colores para este neumático
+            # Lógica para dibujar las 3 franjas de temperatura
+            sub_rect_width = tire_w / 3
             colors = self.tire_colors[tire_code]
 
-            # Dibujamos las 3 franjas (Interna, Media, Externa)
-            # Franja Izquierda (Interna)
-            painter.setBrush(colors[0])
-            painter.drawRect(QRectF(x, y, sub_rect_width, h))
-
-            # Franja Central (Media)
-            painter.setBrush(colors[1])
-            painter.drawRect(QRectF(x + sub_rect_width, y, sub_rect_width, h))
-
-            # Franja Derecha (Externa)
-            painter.setBrush(colors[2])
-            painter.drawRect(QRectF(x + 2 * sub_rect_width, y, sub_rect_width, h))
+            painter.setBrush(colors[0]) # Interna
+            painter.drawRect(QRectF(tire_x, tire_y, sub_rect_width, tire_h))
+            
+            painter.setBrush(colors[1]) # Media
+            painter.drawRect(QRectF(tire_x + sub_rect_width, tire_y, sub_rect_width, tire_h))
+            
+            painter.setBrush(colors[2]) # Externa
+            painter.drawRect(QRectF(tire_x + 2 * sub_rect_width, tire_y, sub_rect_width, tire_h))

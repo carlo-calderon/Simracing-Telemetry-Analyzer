@@ -21,6 +21,7 @@ from TelemetrySession import TelemetrySession
 from RangeSlider import QRangeSlider
 from TrackViewer import TrackWidget
 from LapsTimeTable import LapsTimeTable
+from PlaybackControlWidget import PlaybackControlWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -122,7 +123,6 @@ class MainWindow(QMainWindow):
 
         dock_container_widget = QWidget()
         dock_layout = QVBoxLayout(dock_container_widget)
-#        dock_layout.addWidget(QLabel("Filtro por Distancia (m):")) # Etiqueta para el nuevo slider
         dock_layout.addWidget(self.distance_slider)
         dock_layout.addWidget(self.laps_table_widget)
 
@@ -130,6 +130,17 @@ class MainWindow(QMainWindow):
         laps_dock_widget.setWidget(dock_container_widget)
         laps_dock_widget.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.addDockWidget(Qt.RightDockWidgetArea, laps_dock_widget)
+
+        # --- AÑADIMOS EL NUEVO DOCK DE REPRODUCCIÓN ---
+        self.playback_widget = PlaybackControlWidget(self)
+        playback_dock = QDockWidget("Control de Reproducción y Temperaturas", self)
+        playback_dock.setWidget(self.playback_widget)
+        # Permitimos que se acople arriba o abajo del dock de la derecha
+        self.addDockWidget(Qt.RightDockWidgetArea, playback_dock)
+        # Y también en las áreas superior e inferior de la ventana
+        playback_dock.setAllowedAreas(Qt.AllDockWidgetAreas)
+        # Conectamos la señal del nuevo widget a un nuevo slot
+        self.playback_widget.tick_changed.connect(self.on_playback_tick_changed)
 
         self.update_recent_files_menu()
 
@@ -170,6 +181,7 @@ class MainWindow(QMainWindow):
                 self.session.filter_driving_columns()
                 self.session.remove_problematic_rows()
                 self.dataframe = self.session.dataframe
+                self.playback_widget.set_data(self.session.dataframe)
 
                 # Llenar el combo con columnas numéricas
                 numeric_cols = self.dataframe.select_dtypes(include=[np.number]).columns.tolist()
@@ -186,7 +198,6 @@ class MainWindow(QMainWindow):
                     self.laps_table_widget.update_data(self.session.laps_df)
                     self.laps_table_widget.table.clearSelection() # Limpiar selección anterior
                     self.selected_lap = None # Resetear el filtro de vuelta
-
 
                 if 'LapDistPct' in self.dataframe.columns:
                     pct_min = self.dataframe['LapDistPct'].min()
@@ -498,3 +509,14 @@ class MainWindow(QMainWindow):
     def set_distance_slider_range(self, start_pct, end_pct):
         self.distance_slider.setValues(start_pct, end_pct)
         self.process_and_update_track()
+
+    def on_playback_tick_changed(self, tick_index):
+        """
+        Se activa cada vez que la reproducción avanza un tick.
+        Aquí podrías añadir lógica para actualizar otros widgets, como el mapa.
+        """
+        # Por ahora, solo imprimimos el tick para ver que funciona.
+        # En el futuro, aquí podrías llamar a una función en TrackViewer
+        # para que dibuje un punto o marcador en la posición actual de la trazada.
+        print(f"Playback en el tick: {tick_index}")
+        pass # Lo dejamos en pass para no llenar la consola
