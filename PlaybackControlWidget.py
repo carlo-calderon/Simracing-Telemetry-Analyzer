@@ -6,7 +6,7 @@ Created on 2025-07-05
 @company: CarcaldeF1
 """
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QStyle
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QStyle, QLabel
 from PySide6.QtCore import Qt, QTimer, Signal
 import pandas as pd
 
@@ -31,6 +31,14 @@ class PlaybackControlWidget(QWidget):
         self.timer.timeout.connect(self._advance_tick)
 
         # --- Creación de Widgets ---
+        # 1. La nueva etiqueta de información
+        self.info_label = QLabel("Lap: - | 0%")
+        self.info_label.setAlignment(Qt.AlignCenter)
+        font = self.info_label.font()
+        font.setBold(True)
+        self.info_label.setFont(font)
+
+        # 2. Los widgets existentes
         self.tire_temp_widget = TireTempWidget(self)
         
         self.play_pause_button = QPushButton()
@@ -43,16 +51,29 @@ class PlaybackControlWidget(QWidget):
 
         self.playback_slider = QSlider(Qt.Horizontal)
 
-        # --- Layout ---
+        # --- Layout MODIFICADO ---
         main_layout = QVBoxLayout(self)
         controls_layout = QHBoxLayout()
 
         controls_layout.addWidget(self.play_pause_button)
         controls_layout.addWidget(self.stop_button)
         controls_layout.addWidget(self.playback_slider)
-        
-        main_layout.addWidget(self.tire_temp_widget)
+
+        # Contraer altura de info_label y controles
+        self.info_label.setFixedHeight(22)
+        self.play_pause_button.setFixedHeight(22)
+        self.stop_button.setFixedHeight(22)
+        self.playback_slider.setFixedHeight(22)
+        controls_layout.setSpacing(4)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+
+        main_layout.setSpacing(2)
+        main_layout.setContentsMargins(2, 2, 2, 2)
+
+        # Nuevo orden: Etiqueta arriba, luego controles, luego temperaturas
+        main_layout.addWidget(self.info_label)
         main_layout.addLayout(controls_layout)
+        main_layout.addWidget(self.tire_temp_widget)
 
         # --- Conexiones de Señales ---
         self.play_pause_button.clicked.connect(self.toggle_playback)
@@ -125,5 +146,14 @@ class PlaybackControlWidget(QWidget):
             if temps_dict:
                 self.tire_temp_widget.update_temperatures(temps_dict)
             
+            # Actualizar info_label con Lap y LapDistPct
+            lap = current_data_row['Lap'] if 'Lap' in current_data_row else "-"
+            pct = current_data_row['LapDistPct'] if 'LapDistPct' in current_data_row else 0
+            try:
+                pct_str = f"{float(pct)*100:.1f}%"
+            except Exception:
+                pct_str = "0%"
+            self.info_label.setText(f"Lap: {int(lap)} | {pct_str}")
+
             # Emitimos la señal para que otros widgets (como el mapa) puedan reaccionar
             self.tick_changed.emit(tick)

@@ -513,10 +513,15 @@ class MainWindow(QMainWindow):
     def on_playback_tick_changed(self, tick_index):
         """
         Se activa cada vez que la reproducción avanza un tick.
-        Aquí podrías añadir lógica para actualizar otros widgets, como el mapa.
+        Actualiza la posición del marcador en el mapa.
         """
-        # Por ahora, solo imprimimos el tick para ver que funciona.
-        # En el futuro, aquí podrías llamar a una función en TrackViewer
-        # para que dibuje un punto o marcador en la posición actual de la trazada.
-        print(f"Playback en el tick: {tick_index}")
-        pass # Lo dejamos en pass para no llenar la consola
+        # Asegurarnos de que tenemos datos y el índice es válido
+        if self.session and self.session.dataframe is not None and 0 <= tick_index < len(self.session.dataframe):
+            # Obtenemos la fila de datos para el tick actual
+            data_row = self.session.dataframe.iloc[tick_index]
+            # Extraemos Lon y Lat
+            if 'Lon' in data_row and 'Lat' in data_row:
+                lon = data_row['Lon']
+                lat = data_row['Lat']
+                # Llamamos a la nueva función en TrackWidget para actualizar la posición de la esfera
+                self.track_widget.set_current_point(lon, lat)

@@ -32,6 +32,10 @@ class TrackWidget(QOpenGLWidget):
         self.track_bbox = None
         self.map_bbox = None
         self.aspect_ratio = 1.0
+        self.current_point_pos = None
+        self.point_size_normal = 3.0
+        self.point_size_lowlight = 1.0
+        self.point_size_marker = 12.0
 
         # Variables para paneo y zoom
         self.pan_x = 0.0
@@ -47,6 +51,14 @@ class TrackWidget(QOpenGLWidget):
         self.pan_x = 0.0
         self.pan_y = 0.0
         self.zoom = 1.0
+
+    def set_current_point(self, lon, lat):
+        """ Recibe las coordenadas del punto a resaltar y pide un redibujado. """
+        if lon is not None and lat is not None:
+            self.current_point_pos = (lon, lat)
+        else:
+            self.current_point_pos = None
+        self.update()
 
     def setData(self, vertices, colors, track_bbox, map_image, map_bbox):
         """
@@ -158,8 +170,6 @@ class TrackWidget(QOpenGLWidget):
     def paintGL(self):
         """ El corazón del dibujado. Se llama cada vez que hay que pintar. """
         glClear(GL_COLOR_BUFFER_BIT)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
         
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
@@ -167,6 +177,7 @@ class TrackWidget(QOpenGLWidget):
 
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
+
         self.draw_background_map()
 
         if self.vertices is not None and self.colors is not None:
@@ -182,6 +193,17 @@ class TrackWidget(QOpenGLWidget):
 
             glDisableClientState(GL_COLOR_ARRAY)
             glDisableClientState(GL_VERTEX_ARRAY)
+
+        if self.current_point_pos is not None:
+            # Hacemos el punto más grande y de un color brillante para que destaque
+            glPushMatrix()
+            glPointSize(self.point_size_marker)
+            glBegin(GL_POINTS)
+            glColor4f(1.0, 0.5, 0.5, 1.0) # Un color cian brillante
+            glVertex2f(self.current_point_pos[0], self.current_point_pos[1])
+            glEnd()
+            glPointSize(self.point_size_normal)
+            glPopMatrix()
 
     def draw_background_map(self):
         """ Dibuja un rectángulo con la textura del mapa. """
