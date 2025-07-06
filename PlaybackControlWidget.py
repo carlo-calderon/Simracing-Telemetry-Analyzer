@@ -66,6 +66,7 @@ class PlaybackControlWidget(QWidget):
         if self.dataframe is not None and not self.dataframe.empty:
             self._total_ticks = len(self.dataframe) - 1
             self.playback_slider.setRange(0, self._total_ticks)
+            self.tire_temp_widget.set_temp_range_from_dataframe(df)  # <-- Aquí está el cambio
         else:
             self._total_ticks = 0
             self.playback_slider.setRange(0, 0)
