@@ -15,13 +15,14 @@ import numpy as np
 class TireTempWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(150) # Le damos una altura mínima
+        self.setMinimumHeight(100) # Le damos una altura mínima
 
         # Carga la imagen del coche que te proporcioné
         self.car_pixmap = QPixmap("./icons/formula_icon.jpeg") 
 
         # Diccionario para guardar los colores calculados para cada neumático
         default_color = QColor(Qt.gray)
+        default_color.setAlphaF(0.7)
         self.tire_colors = {
             'LF': [default_color, default_color, default_color],
             'RF': [default_color, default_color, default_color],
@@ -37,10 +38,10 @@ class TireTempWidget(QWidget):
         # Puede que necesites ajustarlos ligeramente para que coincidan con tu imagen.
         self.tire_rects_pct = {
             #               (x_pct, y_pct, w_pct, h_pct)
-            'LF': QRectF(0.23, 0.10, 0.14, 0.20),
-            'RF': QRectF(0.63, 0.10, 0.14, 0.20),
-            'LR': QRectF(0.23, 0.70, 0.14, 0.20),
-            'RR': QRectF(0.63, 0.70, 0.14, 0.20)
+            'LF': QRectF(12/600.0, 222/1640.0, 95/600.0, 190/1640.0),
+            'RF': QRectF(485/600.0, 222/1640.0, 100/600.0, 190/1640.0),
+            'LR': QRectF(12/600.0, 1292/1640.0, 135/600.0, 190/1640.0),
+            'RR': QRectF(455/600.0, 1292/1640.0, 135/600.0, 190/1640.)
         }
 
     def update_temperatures(self, temps: dict):
