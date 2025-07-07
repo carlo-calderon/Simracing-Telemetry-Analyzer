@@ -520,8 +520,9 @@ class MainWindow(QMainWindow):
             # Obtenemos la fila de datos para el tick actual
             data_row = self.session.dataframe.iloc[tick_index]
             # Extraemos Lon y Lat
-            if 'Lon' in data_row and 'Lat' in data_row:
+            if all(k in data_row for k in ['Lon', 'Lat', 'Yaw']):
                 lon = data_row['Lon']
                 lat = data_row['Lat']
+                yaw = data_row['Yaw']
                 # Llamamos a la nueva función en TrackWidget para actualizar la posición de la esfera
-                self.track_widget.set_current_point(lon, lat)
+                self.track_widget.set_current_point(lon, lat, yaw)

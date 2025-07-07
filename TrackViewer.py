@@ -15,7 +15,8 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QPalette, QImage
 from PySide6.QtCore import Qt, QSettings, Signal, QPoint, QRect
 from OpenGL.GL import *
-from matplotlib import cm  # Usaremos matplotlib para los mapas de colores
+from matplotlib import cm 
+from GLTFModel import GLTFModel
 
 from TelemetrySession import TelemetrySession
 
@@ -35,7 +36,7 @@ class TrackWidget(QOpenGLWidget):
         self.current_point_pos = None
         self.point_size_normal = 3.0
         self.point_size_lowlight = 1.0
-        self.point_size_marker = 12.0
+        self.point_size_marker = 15.0
 
         # Variables para paneo y zoom
         self.pan_x = 0.0
@@ -43,8 +44,12 @@ class TrackWidget(QOpenGLWidget):
         self.zoom = 1.0
         self._last_mouse_pos = None
 
-        self.map_texture_id = None # <--- AÑADIR: para guardar el ID de la textura
-        self.map_image = None # <--- AÑADIR: para guardar la imagen del mapa
+        self.map_texture_id = None
+        self.map_image = None
+
+        self.car_model = GLTFModel()        # Creamos una instancia de nuestra nueva clase
+        self.current_car_pos = None     # Guardará (Lon, Lat, Alt)
+        self.current_car_yaw = 0.0      # Guardará la orientación
 
     def reset_view(self):
         """Resetea el paneo a (0,0) y el zoom a 1.0. No provoca un redibujado."""
@@ -52,12 +57,12 @@ class TrackWidget(QOpenGLWidget):
         self.pan_y = 0.0
         self.zoom = 1.0
 
-    def set_current_point(self, lon, lat):
-        """ Recibe las coordenadas del punto a resaltar y pide un redibujado. """
-        if lon is not None and lat is not None:
-            self.current_point_pos = (lon, lat)
+    def set_current_point(self, lon, lat, yaw):
+        if lon is not None and lat is not None and yaw is not None:
+            self.current_car_pos = (lon, lat)
+            self.current_car_yaw = yaw
         else:
-            self.current_point_pos = None
+            self.current_car_pos = None
         self.update()
 
     def setData(self, vertices, colors, track_bbox, map_image, map_bbox):
@@ -103,6 +108,9 @@ class TrackWidget(QOpenGLWidget):
 
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+        if self.car_model.load('./assets/formula/formula_car.glb', rotation_xyz_degrees=(90, -90, 0), base_scale=0.0005):
+            self.car_model.initGL()
 
     def resizeGL(self, w, h):
         """ Se llama cada vez que la ventana cambia de tamaño. Ajusta la cámara. """
@@ -194,16 +202,28 @@ class TrackWidget(QOpenGLWidget):
             glDisableClientState(GL_COLOR_ARRAY)
             glDisableClientState(GL_VERTEX_ARRAY)
 
-        if self.current_point_pos is not None:
-            # Hacemos el punto más grande y de un color brillante para que destaque
+        if self.current_car_pos is not None:
+            glDisable(GL_TEXTURE_2D)
             glPushMatrix()
-            glPointSize(self.point_size_marker)
-            glBegin(GL_POINTS)
-            glColor4f(1.0, 0.5, 0.5, 1.0) # Un color cian brillante
-            glVertex2f(self.current_point_pos[0], self.current_point_pos[1])
-            glEnd()
-            glPointSize(self.point_size_normal)
+            lon, lat = self.current_car_pos
+            glTranslatef(lon, lat, 0.01) # Mover
+            yaw_degrees = np.degrees(self.current_car_yaw)
+            glRotatef(yaw_degrees, 0, 0, 1) # Girar (eje Z para vista cenital)
+#            model_scale = 0.0001
+#            glScalef(model_scale, model_scale, model_scale) # Escalar
+            # Simplemente le pedimos al modelo que se dibuje a sí mismo
+            self.car_model.draw()
             glPopMatrix()
+
+            # # Hacemos el punto más grande y de un color brillante para que destaque
+            # glPushMatrix()
+            # glPointSize(self.point_size_marker)
+            # glBegin(GL_POINTS)
+            # glColor4f(1.0, 0.3, 0.3, 1.0) # Un color cian brillante
+            # glVertex2f(self.current_point_pos[0], self.current_point_pos[1])
+            # glEnd()
+            # glPointSize(self.point_size_normal)
+            # glPopMatrix()
 
     def draw_background_map(self):
         """ Dibuja un rectángulo con la textura del mapa. """
