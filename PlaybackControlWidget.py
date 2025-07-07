@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 import pandas as pd
 
 from TireTempWidget import TireTempWidget
+from SteeringInputWidget import SteeringInputWidget
 
 class PlaybackControlWidget(QWidget):
     # Señal que emitirá el índice del frame/tick actual cada vez que cambie
@@ -40,6 +41,12 @@ class PlaybackControlWidget(QWidget):
 
         # 2. Los widgets existentes
         self.tire_temp_widget = TireTempWidget(self)
+        self.tire_temp_widget.setMinimumWidth(160)
+        self.steering_widget = SteeringInputWidget(self)
+        self.steering_widget.setFixedSize(200, 150)
+        vis_layout = QHBoxLayout()
+        vis_layout.addWidget(self.tire_temp_widget)
+        vis_layout.addWidget(self.steering_widget) 
         
         self.play_pause_button = QPushButton()
         self.play_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
@@ -73,7 +80,7 @@ class PlaybackControlWidget(QWidget):
         # Nuevo orden: Etiqueta arriba, luego controles, luego temperaturas
         main_layout.addWidget(self.info_label)
         main_layout.addLayout(controls_layout)
-        main_layout.addWidget(self.tire_temp_widget)
+        main_layout.addLayout(vis_layout)
 
         # --- Conexiones de Señales ---
         self.play_pause_button.clicked.connect(self.toggle_playback)
@@ -154,6 +161,11 @@ class PlaybackControlWidget(QWidget):
             except Exception:
                 pct_str = "0%"
             self.info_label.setText(f"Lap: {int(lap)} | {pct_str}")
+
+            brake = current_data_row.get('Brake', 0.0)
+            throttle = current_data_row.get('Throttle', 0.0)
+            steer_angle = -current_data_row.get('SteeringWheelAngle', 0.0)*180.0/ 3.141592653589793  # Convertir de radianes a grados
+            self.steering_widget.update_inputs(brake, throttle, steer_angle)
 
             # Emitimos la señal para que otros widgets (como el mapa) puedan reaccionar
             self.tick_changed.emit(tick)

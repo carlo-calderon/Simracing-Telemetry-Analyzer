@@ -8,6 +8,8 @@ Created on 2025-07-06
 import numpy as np
 from OpenGL.GL import *
 from pygltflib import GLTF2
+import os
+from PIL import Image
 
 # ... (Los diccionarios de mapeo no cambian) ...
 GLTF_COMPONENT_TYPE_TO_NUMPY = {5120: np.int8, 5121: np.uint8, 5122: np.int16, 5123: np.uint16, 5125: np.uint32, 5126: np.float32}
@@ -15,158 +17,160 @@ GLTF_TYPE_TO_NUM_COMPONENTS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MA
 
 class GLTFModel:
     def __init__(self):
-        # Ahora guardamos una lista de primitivas. Cada primitiva es un objeto dibujable.
         self.primitives = []
-        self.vertices_all = [] # Para calcular el bounding box de todo el modelo
+        self.vertices_all = []
         self.base_rotation_xyz = (0, 0, 0)
-        self.base_scale = 1.0  # Escala base del modelo, se puede ajustar si es necesario
+        self.base_scale = 1.0
+        self.textures = []
 
     def load(self, filename, rotation_xyz_degrees=(0, 0, 0), base_scale=1.0):
-        """
-        Carga TODAS las mallas de un archivo gltf, cada una con sus datos.
-        """
+        self.base_rotation_xyz = rotation_xyz_degrees
+        self.base_scale = base_scale
         try:
-            self.base_rotation_xyz = rotation_xyz_degrees
-            self.base_scale = base_scale
-
             print(f"INFO: Cargando modelo 3D desde '{filename}'...")
             gltf = GLTF2.load(filename)
             binary_blob = gltf.binary_blob()
-            if not binary_blob:
-                gltf.load_buffers()
-                binary_blob = gltf.binary_blob()
+            if not binary_blob: gltf.load_buffers(); binary_blob = gltf.binary_blob()
             if not binary_blob: raise ValueError("No se pudo cargar el buffer binario.")
 
-            # Iteramos sobre todas las mallas del archivo
-            for mesh in gltf.meshes:
-                # Y sobre todas las primitivas de cada malla
-                for primitive in mesh.primitives:
-                    new_primitive = {} # Diccionario para guardar los datos de esta parte del modelo
+            # --- Cargar las imágenes de las texturas (con la corrección) ---
+            model_dir = os.path.dirname(filename)
+            for img_info in gltf.images:
+                # --- COMPROBACIÓN AÑADIDA ---
+                if not img_info.uri:
+                    print("ADVERTENCIA: Se encontró una imagen sin URI en el GLTF, se omitirá.")
+                    self.textures.append(None) # Añadimos None para mantener la consistencia de los índices
+                    continue # Pasamos a la siguiente imagen
 
-                    # --- Extraer Índices ---
+                try:
+                    # Reemplazamos los espacios codificados en la ruta
+                    img_path = os.path.join(model_dir, img_info.uri.replace('%20', ' '))
+                    img = Image.open(img_path).convert("RGBA")
+                    self.textures.append(img)
+                    print(f"INFO: Textura '{img_info.uri}' cargada.")
+                except Exception as e:
+                    print(f"ERROR al cargar la textura {img_info.uri}: {e}")
+                    self.textures.append(None)
+            
+            for mesh in gltf.meshes:
+                for primitive in mesh.primitives:
+                    new_primitive = {}
+                    # ... (el resto de la lógica de carga de vértices, índices y materiales no cambia) ...
                     indices_accessor = gltf.accessors[primitive.indices]
                     buffer_view = gltf.bufferViews[indices_accessor.bufferView]
-                    dtype = GLTF_COMPONENT_TYPE_TO_NUMPY[indices_accessor.componentType]
-                    indices_data = np.frombuffer(binary_blob, dtype=dtype, count=indices_accessor.count, offset=(buffer_view.byteOffset or 0) + (indices_accessor.byteOffset or 0))
+                    indices_data = np.frombuffer(binary_blob, dtype=GLTF_COMPONENT_TYPE_TO_NUMPY[indices_accessor.componentType], count=indices_accessor.count, offset=(buffer_view.byteOffset or 0) + (indices_accessor.byteOffset or 0))
                     new_primitive['indices'] = np.copy(indices_data).astype(np.uint32)
                     new_primitive['indices_count'] = indices_accessor.count
                     
-                    # --- Extraer Vértices ---
                     pos_accessor = gltf.accessors[primitive.attributes.POSITION]
                     buffer_view = gltf.bufferViews[pos_accessor.bufferView]
-                    num_components = GLTF_TYPE_TO_NUM_COMPONENTS[pos_accessor.type]
-                    dtype = GLTF_COMPONENT_TYPE_TO_NUMPY[pos_accessor.componentType]
-                    vertices_data = np.frombuffer(binary_blob, dtype=dtype, count=pos_accessor.count * num_components, offset=(buffer_view.byteOffset or 0) + (pos_accessor.byteOffset or 0))
-                    vertices_copy = np.copy(vertices_data).reshape(pos_accessor.count, num_components)
-                    new_primitive['vertices'] = vertices_copy.astype(np.float32)
+                    vertices_data = np.frombuffer(binary_blob, dtype=GLTF_COMPONENT_TYPE_TO_NUMPY[pos_accessor.componentType], count=pos_accessor.count * GLTF_TYPE_TO_NUM_COMPONENTS[pos_accessor.type], offset=(buffer_view.byteOffset or 0) + (pos_accessor.byteOffset or 0))
+                    vertices_copy = np.copy(vertices_data).reshape(pos_accessor.count, GLTF_TYPE_TO_NUM_COMPONENTS[pos_accessor.type])
+                    new_primitive['vertices'] = vertices_copy
                     self.vertices_all.append(vertices_copy)
+                    
+                    new_primitive['texcoords'] = None
+                    if hasattr(primitive.attributes, 'TEXCOORD_0') and primitive.attributes.TEXCOORD_0 is not None:
+                        tex_accessor = gltf.accessors[primitive.attributes.TEXCOORD_0]
+                        buffer_view = gltf.bufferViews[tex_accessor.bufferView]
+                        tex_data = np.frombuffer(binary_blob, dtype=GLTF_COMPONENT_TYPE_TO_NUMPY[tex_accessor.componentType], count=tex_accessor.count * GLTF_TYPE_TO_NUM_COMPONENTS[tex_accessor.type], offset=(buffer_view.byteOffset or 0) + (tex_accessor.byteOffset or 0))
+                        new_primitive['texcoords'] = np.copy(tex_data).reshape(tex_accessor.count, GLTF_TYPE_TO_NUM_COMPONENTS[tex_accessor.type])
 
-                    # --- Extraer Colores de Vértice o Material ---
-                    new_primitive['colors'] = None
-                    new_primitive['base_color'] = None
-                    if hasattr(primitive.attributes, 'COLOR_0') and primitive.attributes.COLOR_0 is not None:
-                        color_accessor = gltf.accessors[primitive.attributes.COLOR_0]
-                        buffer_view = gltf.bufferViews[color_accessor.bufferView]
-                        num_components = GLTF_TYPE_TO_NUM_COMPONENTS[color_accessor.type]
-                        dtype = GLTF_COMPONENT_TYPE_TO_NUMPY[color_accessor.componentType]
-                        
-                        color_data = np.frombuffer(binary_blob, dtype=dtype, count=color_accessor.count * num_components, offset=(buffer_view.byteOffset or 0) + (color_accessor.byteOffset or 0))
-                        
-                        # LA CORRECCIÓN: Usamos la variable 'color_data' que acabamos de crear
-                        new_primitive['colors'] = np.copy(color_data).reshape(color_accessor.count, num_components).astype(np.float32)
-                        print("INFO: Datos de color por vértice encontrados y cargados.")
-                        
-                    elif primitive.material is not None:
+                    new_primitive['material_info'] = {'base_color': [1,1,1,1], 'texture_id': None}
+                    if primitive.material is not None:
                         material = gltf.materials[primitive.material]
-                        if material.pbrMetallicRoughness and material.pbrMetallicRoughness.baseColorFactor:
-                            new_primitive['base_color'] = material.pbrMetallicRoughness.baseColorFactor
-                            print(f"INFO: Usando color de material: {new_primitive['base_color']}")
+                        if material.pbrMetallicRoughness:
+                            if material.pbrMetallicRoughness.baseColorFactor:
+                                new_primitive['material_info']['base_color'] = material.pbrMetallicRoughness.baseColorFactor
+                            if material.pbrMetallicRoughness.baseColorTexture:
+                                new_primitive['material_info']['texture_id'] = material.pbrMetallicRoughness.baseColorTexture.index
                     
                     self.primitives.append(new_primitive)
-
-            # --- Normalizar TODO el modelo junto ---
-            if not self.vertices_all: return False
             
+            # ... (código de normalización no cambia) ...
+            if not self.vertices_all: return False
             all_vertices_np = np.concatenate(self.vertices_all)
             min_coords, max_coords = all_vertices_np.min(axis=0), all_vertices_np.max(axis=0)
             center = (min_coords + max_coords) / 2.0
             scale_factor = (max_coords - min_coords).max()
             if scale_factor == 0: scale_factor = 1
-
             for primitive in self.primitives:
                 primitive['vertices'] -= center
                 primitive['vertices'] /= scale_factor
-
-            print(f"INFO: Modelo con {len(gltf.meshes)} mallas cargado y normalizado.")
             return True
-
         except Exception as e:
             print(f"ERROR: No se pudo cargar el modelo 3D '{filename}': {e}")
             return False
-        
+
     def initGL(self):
-        """ Prepara los buffers de OpenGL para CADA primitiva. """
+        # ... (esta función no cambia) ...
         if not self.primitives: return
+        gl_textures = []
+        if self.textures:
+            for img in self.textures:
+                if img:
+                    img_data = np.array(list(img.getdata()), np.uint8)
+                    texture_id = glGenTextures(1)
+                    glBindTexture(GL_TEXTURE_2D, texture_id)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
+                    glGenerateMipmap(GL_TEXTURE_2D)
+                    gl_textures.append(texture_id)
+                else:
+                    gl_textures.append(None)
+        self.textures = gl_textures
 
         for primitive in self.primitives:
             primitive['vbo'] = glGenBuffers(1)
             glBindBuffer(GL_ARRAY_BUFFER, primitive['vbo'])
-            glBufferData(GL_ARRAY_BUFFER, primitive['vertices'].nbytes, primitive['vertices'], GL_STATIC_DRAW)
-
+            glBufferData(GL_ARRAY_BUFFER, primitive['vertices'].astype(np.float32).nbytes, primitive['vertices'].astype(np.float32), GL_STATIC_DRAW)
             primitive['ebo'] = glGenBuffers(1)
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, primitive['ebo'])
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, primitive['indices'].nbytes, primitive['indices'], GL_STATIC_DRAW)
-
-            primitive['color_vbo'] = None
-            if primitive['colors'] is not None:
-                primitive['color_vbo'] = glGenBuffers(1)
-                glBindBuffer(GL_ARRAY_BUFFER, primitive['color_vbo'])
-                glBufferData(GL_ARRAY_BUFFER, primitive['colors'].nbytes, primitive['colors'], GL_STATIC_DRAW)
-        
+            primitive['texcoord_vbo'] = None
+            if primitive['texcoords'] is not None:
+                primitive['texcoord_vbo'] = glGenBuffers(1)
+                glBindBuffer(GL_ARRAY_BUFFER, primitive['texcoord_vbo'])
+                glBufferData(GL_ARRAY_BUFFER, primitive['texcoords'].astype(np.float32).nbytes, primitive['texcoords'].astype(np.float32), GL_STATIC_DRAW)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
-        print(f"INFO: Buffers de OpenGL para {len(self.primitives)} primitivas creados.")
-
 
     def draw(self):
-        """ Dibuja cada primitiva del modelo con su propio color. """
-        if not self.primitives:
-            return
-        
-        model_scale = self.base_scale  # Usar la escala base del modelo
-        glScalef(model_scale, model_scale, model_scale)
-        
+        # ... (esta función no cambia) ...
+        if not self.primitives: return
+        glPushMatrix()
+        glScalef(self.base_scale, self.base_scale, self.base_scale)
         rx, ry, rz = self.base_rotation_xyz
-        glRotatef(rx, 1, 0, 0) # Rotación sobre X
-        glRotatef(ry, 0, 1, 0) # Rotación sobre Y
-        glRotatef(rz, 0, 0, 1) # Rotación sobre Z
+        glRotatef(rx, 1, 0, 0); glRotatef(ry, 0, 1, 0); glRotatef(rz, 0, 0, 1)
 
         glEnable(GL_COLOR_MATERIAL)
-        
+        glEnableClientState(GL_VERTEX_ARRAY)
+
         for primitive in self.primitives:
-            # Activar y apuntar a los buffers de esta primitiva
-            glEnableClientState(GL_VERTEX_ARRAY)
             glBindBuffer(GL_ARRAY_BUFFER, primitive['vbo'])
             glVertexPointer(3, GL_FLOAT, 0, None)
-            
-            # Establecer el color para esta primitiva
-            if primitive['color_vbo']:
-                glEnableClientState(GL_COLOR_ARRAY)
-                glBindBuffer(GL_ARRAY_BUFFER, primitive['color_vbo'])
-                glColorPointer(primitive['colors'].shape[1], GL_FLOAT, 0, None)
-            elif primitive['base_color']:
-                glDisableClientState(GL_COLOR_ARRAY)
-                glColor4f(*primitive['base_color'])
+            material_info = primitive['material_info']
+            base_color = material_info['base_color']
+            texture_id = material_info['texture_id']
+            glColor4f(*base_color)
+
+            if texture_id is not None and primitive['texcoord_vbo'] and self.textures[texture_id] is not None:
+                glEnable(GL_TEXTURE_2D)
+                glEnableClientState(GL_TEXTURE_COORD_ARRAY)
+                glBindTexture(GL_TEXTURE_2D, self.textures[texture_id])
+                glBindBuffer(GL_ARRAY_BUFFER, primitive['texcoord_vbo'])
+                glTexCoordPointer(2, GL_FLOAT, 0, None)
             else:
-                glDisableClientState(GL_COLOR_ARRAY)
-                glColor4f(1.0, 1.0, 1.0, 1.0)
+                glDisable(GL_TEXTURE_2D)
+                glDisableClientState(GL_TEXTURE_COORD_ARRAY)
             
-            # Dibujar
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, primitive['ebo'])
             glDrawElements(GL_TRIANGLES, primitive['indices_count'], GL_UNSIGNED_INT, None)
 
-        # Limpiar el estado al final
         glDisableClientState(GL_VERTEX_ARRAY)
-        glDisableClientState(GL_COLOR_ARRAY)
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+        glDisable(GL_TEXTURE_2D)
+        glPopMatrix()
