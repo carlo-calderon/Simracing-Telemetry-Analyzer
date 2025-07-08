@@ -21,12 +21,14 @@ class SteeringInputWidget(QWidget):
         
         # --- Crear y configurar las barras de progreso para los pedales ---
         self.brake_bar = self._create_pedal_bar(is_brake=True)
+        self.brake_bar.setMaximumWidth(20)  # Ajusta aquí el ancho máximo
         self.throttle_bar = self._create_pedal_bar(is_brake=False)
+        self.throttle_bar.setMaximumWidth(20)  # Ajusta aquí el ancho máximo
         
         # --- Layout Principal ---
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(5, 5, 5, 5)
-        main_layout.setSpacing(10)
+        main_layout.setSpacing(2)
         
         main_layout.addWidget(self.brake_bar)
         main_layout.addWidget(self.steering_wheel_label, 1) # El '1' le da más espacio al volante

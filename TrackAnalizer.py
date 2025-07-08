@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
 
         self.toolbar.addSeparator()
         self.color_range_slider  = QRangeSlider(self, labels_visible=True)
+        self.color_range_slider.setMinimumWidth(250)
         self.toolbar.addWidget(self.color_range_slider )
 
         self.color_range_slider .rangeChanged.connect(self.on_range_changed)

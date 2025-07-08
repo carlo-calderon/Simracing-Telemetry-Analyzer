@@ -81,6 +81,7 @@ class PlaybackControlWidget(QWidget):
         main_layout.addWidget(self.info_label)
         main_layout.addLayout(controls_layout)
         main_layout.addLayout(vis_layout)
+        main_layout.addStretch(1)  # Para empujar los widgets hacia arriba
 
         # --- Conexiones de Señales ---
         self.play_pause_button.clicked.connect(self.toggle_playback)
