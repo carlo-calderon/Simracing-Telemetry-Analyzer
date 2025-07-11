@@ -171,7 +171,8 @@ class TelemetrySession:
             'LFtempL', 'LFtempM', 'LFtempR', 'RFtempL', 'RFtempM', 'RFtempR',
             'LRtempL', 'LRtempM', 'LRtempR', 'RRtempL', 'RRtempM', 'RRtempR',
             # Columnas creadas en analyze_driving_inputs
-            'LF_Lockup', 'RF_Lockup', 'LR_Lockup', 'RR_Lockup', 'WheelSpin'
+            'LF_Lockup', 'RF_Lockup', 'LR_Lockup', 'RR_Lockup', 'WheelSpin',
+            'LatAccel', 'LongAccel', 'VertAccel'
         ]
         existing_columns = [col for col in required_columns if col in self.dataframe.columns]
         missing_columns = [col for col in required_columns if col not in self.dataframe.columns]

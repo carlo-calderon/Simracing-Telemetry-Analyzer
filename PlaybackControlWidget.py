@@ -12,6 +12,7 @@ import pandas as pd
 
 from TireTempWidget import TireTempWidget
 from SteeringInputWidget import SteeringInputWidget
+from GForceWidget import GForceWidget
 
 class PlaybackControlWidget(QWidget):
     # Señal que emitirá el índice del frame/tick actual cada vez que cambie
@@ -45,9 +46,15 @@ class PlaybackControlWidget(QWidget):
         self.tire_temp_widget.setMinimumWidth(160)
         self.steering_widget = SteeringInputWidget(self)
         self.steering_widget.setFixedSize(250, 250)
+        self.g_force_widget = GForceWidget(self)
+
+        temp_gg_layout = QHBoxLayout()
+        temp_gg_layout.addWidget(self.tire_temp_widget)
+        temp_gg_layout.addWidget(self.g_force_widget)
+
         vis_layout = QVBoxLayout()
         vis_layout.addWidget(self.steering_widget) 
-        vis_layout.addWidget(self.tire_temp_widget)
+        vis_layout.addLayout(temp_gg_layout)
         
         self.play_pause_button = QPushButton()
         self.play_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
@@ -173,6 +180,13 @@ class PlaybackControlWidget(QWidget):
             gear = current_data_row.get('Gear', 0)
 
             self.steering_widget.update_inputs(brake, throttle, steer_angle, rpm_pct, gear)
+
+            lat_accel = current_data_row.get('LatAccel', 0.0)
+            long_accel = current_data_row.get('LongAccel', 0.0)            
+            # Convertimos de m/s^2 a Gs
+            lat_g = lat_accel / 9.81
+            long_g = long_accel / 9.81
+            self.g_force_widget.update_g_forces(lat_g, long_g)
 
             # Emitimos la señal para que otros widgets (como el mapa) puedan reaccionar
             self.tick_changed.emit(tick)
