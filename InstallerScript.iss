@@ -2,12 +2,12 @@
 
 [Setup]
 AppName=Simracing Telemetry Analyzer
-AppVersion=1.0.0
+AppVersion=1.0.1
 AppPublisher=CarcaldeF1
 DefaultDirName={autopf}\Simracing Telemetry Analyzer
 DefaultGroupName=Simracing Telemetry Analyzer
 OutputDir=./dist
-OutputBaseFilename=SimracingTelemetryAnalyzer_v1.0.0_setup
+OutputBaseFilename=SimracingTelemetryAnalyzer_v1.0.1_setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
