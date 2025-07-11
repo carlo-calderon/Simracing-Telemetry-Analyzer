@@ -6,8 +6,8 @@ Created on 2025-07-07
 @company: CarcaldeF1
 """
 
-from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QRadialGradient, QFont
+from PySide6.QtWidgets import QWidget, QToolTip
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QRadialGradient, QFont, QCursor
 from PySide6.QtCore import Qt, QPointF, QRectF
 import numpy as np
 import math
@@ -15,25 +15,30 @@ import math
 class GForceWidget(QWidget):
     def __init__(self, parent=None, max_g=5.0):
         super().__init__(parent)
-        self.setMinimumSize(150, 150) # Aseguramos un tamaño mínimo cuadrado
+        self.setMinimumSize(180, 180) # Aseguramos un tamaño mínimo cuadrado
+        self.setMouseTracking(True) # Para detectar el movimiento del mouse
         
         self.lat_g = 0.0
         self.long_g = 0.0
+        self.vert_g = 0.0
         self.x_g = 0.0
         self.y_g = 0.0
         
         self.max_g = max_g # El máximo G que mostrarán los círculos
+
+        self._label_rects = {}
 
     def set_max_g(self, g_value: float):
         """ Permite cambiar el G máximo del diagrama dinámicamente. """
         self.max_g = g_value if g_value > 0 else 1.0
         self.update()
         
-    def update_g_forces(self, lat_g: float, long_g: float, yaw_radians: float):
+    def update_g_forces(self, lat_g: float, long_g: float, vert_g: float, yaw_radians: float):
         """ Actualiza los valores de G y solicita un redibujado. """
         #print(f"Updating G-Forces: Lat={lat_g}, Long={long_g}")
         self.lat_g = lat_g
         self.long_g = long_g
+        self.vert_g = vert_g
 
         cos_yaw = np.cos(yaw_radians-math.pi/2)
         sin_yaw = np.sin(yaw_radians-math.pi/2)
@@ -94,33 +99,55 @@ class GForceWidget(QWidget):
         painter.setBrush(rel_gradient)
         painter.drawEllipse(QPointF(point_x, point_y), point_radius, point_radius)
 
-        font = QFont("Arial", 7)
-        font.setBold(True)
-        painter.setFont(font)
+        # --- DIBUJAR ETIQUETAS ---
+        font = QFont("Arial", 7); font.setBold(True); painter.setFont(font)
         metrics = painter.fontMetrics()
-
-        # 1. Etiqueta para LongAccel (Arriba)
-        long_text = f"{self.long_g:.2f} G"
-        long_rect = metrics.boundingRect(long_text)
-        long_label_rect = QRectF(center.x() - long_rect.width()/2 - 5, 5, long_rect.width() + 10, long_rect.height() + 4)
-        painter.setBrush(QColor(150, 0, 0))
-        painter.setPen(QColor(255, 255, 255))
-        painter.drawRoundedRect(long_label_rect, 4, 4)
-        painter.drawText(long_label_rect, Qt.AlignCenter, long_text)
-
-        # 2. Etiqueta para LatAccel (Derecha)
-        lat_text = f"{self.lat_g:.2f} G"
-        lat_rect = metrics.boundingRect(lat_text)
-        lat_label_rect = QRectF(w - lat_rect.width() - 15, center.y() - lat_rect.height()/2 - 2, lat_rect.width() + 10, lat_rect.height() + 4)
-        painter.setBrush(QColor(150, 0, 0))
-        painter.drawRoundedRect(lat_label_rect, 4, 4)
-        painter.drawText(lat_label_rect, Qt.AlignCenter, lat_text)
         
-        # 3. Etiqueta para Aceleración Total (Abajo-Izquierda)
-        total_g = np.sqrt(self.x_g**2 + self.y_g**2)
-        total_text = f"{total_g:.2f} G"
-        total_rect = metrics.boundingRect(total_text)
-        total_label_rect = QRectF(w - lat_rect.width() - 15, 5, total_rect.width() + 10, total_rect.height() + 4)
-        painter.setBrush(QColor(0, 150, 150))
-        painter.drawRoundedRect(total_label_rect, 4, 4)
-        painter.drawText(total_label_rect, Qt.AlignCenter, total_text)
+        # Diccionario con la configuración de cada etiqueta
+        labels_to_draw = {
+            'Long': {'text': f"{self.long_g:.2f} G", 'color': QColor(150, 0, 0), 'pos': 'top_center'},
+            'Lat':  {'text': f"{self.lat_g:.2f} G",  'color': QColor(150, 0, 0), 'pos': 'mid_right'},
+            'Total':{'text': f"{np.sqrt(self.x_g**2 + self.y_g**2):.2f} G", 'color': QColor(0, 150, 150), 'pos': 'top_right'},
+            'Vert': {'text': f"{self.vert_g:.2f} G",   'color': QColor(0, 120, 0),   'pos': 'bottom_left'} # NUEVA ETIQUETA
+        }
+
+        self._label_rects.clear() # Limpiamos los rectángulos anteriores
+        painter.setPen(QColor(255, 255, 255))
+        
+        for name, data in labels_to_draw.items():
+            text_rect = metrics.boundingRect(data['text'])
+            bubble_rect = QRectF(0, 0, text_rect.width() + 10, text_rect.height() + 4)
+            
+            if data['pos'] == 'top_center':
+                bubble_rect.moveCenter(QPointF(center.x(), 5 + bubble_rect.height()/2))
+            elif data['pos'] == 'mid_right':
+                bubble_rect.moveCenter(QPointF(w - 5 - bubble_rect.width()/2, center.y()))
+            elif data['pos'] == 'bottom_left':
+                bubble_rect.moveBottomLeft(QPointF(5, h - 5))
+            elif data['pos'] == 'top_right':
+                bubble_rect.moveTopRight(QPointF(w - 10, 10))
+
+            painter.setBrush(data['color'])
+            painter.drawRoundedRect(bubble_rect, 4, 4)
+            painter.drawText(bubble_rect, Qt.AlignCenter, data['text'])
+            self._label_rects[name] = bubble_rect # Guardamos el rectángulo para el tooltip
+    
+    def mouseMoveEvent(self, event):
+        """ Se activa cuando el mouse se mueve sobre el widget. """
+        tooltip_texts = {
+            'Long': 'Aceleración Longitudinal (Frenada / Aceleración)',
+            'Lat': 'Aceleración Lateral (Fuerzas en Curva)',
+            'Total': 'Magnitud Total de la Aceleración Horizontal',
+            'Vert': 'Aceleración Vertical (Baches, Compresión)'
+        }
+        
+        for name, rect in self._label_rects.items():
+            if rect.contains(event.pos()):
+                QToolTip.showText(QCursor.pos(), tooltip_texts.get(name, ""), self)
+                return
+        
+        QToolTip.hideText() # Ocultar si no está sobre ninguna etiqueta
+
+    def leaveEvent(self, event):
+        """ Se activa cuando el mouse abandona el widget. """
+        QToolTip.hideText()
