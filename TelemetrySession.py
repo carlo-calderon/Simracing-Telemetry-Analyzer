@@ -161,7 +161,7 @@ class TelemetrySession:
             self.analyze_spin()
 
         required_columns = [
-            'SessionTime', 'Lap', 'Speed', 'RPM', 'Throttle', 'Brake',
+            'SessionTime', 'Lap', 'Speed', 'RPM', 'Throttle', 'Brake', 'Gear',
             'Lat', 'Lon', 'Alt',      # Position
             'SteeringWheelAngle',     # Steering wheel angle
             'Yaw', 'Pitch', 'Roll',   # Car rotation

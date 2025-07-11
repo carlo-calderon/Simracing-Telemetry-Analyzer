@@ -25,6 +25,7 @@ class PlaybackControlWidget(QWidget):
         self._is_playing = False
         self._current_tick = 0
         self._total_ticks = 0
+        self._max_rpm = 1.0
 
         # --- Temporizador para la reproducción ---
         self.timer = QTimer(self)
@@ -43,10 +44,10 @@ class PlaybackControlWidget(QWidget):
         self.tire_temp_widget = TireTempWidget(self)
         self.tire_temp_widget.setMinimumWidth(160)
         self.steering_widget = SteeringInputWidget(self)
-        self.steering_widget.setFixedSize(200, 150)
-        vis_layout = QHBoxLayout()
-        vis_layout.addWidget(self.tire_temp_widget)
+        self.steering_widget.setFixedSize(250, 250)
+        vis_layout = QVBoxLayout()
         vis_layout.addWidget(self.steering_widget) 
+        vis_layout.addWidget(self.tire_temp_widget)
         
         self.play_pause_button = QPushButton()
         self.play_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
@@ -95,7 +96,8 @@ class PlaybackControlWidget(QWidget):
         if self.dataframe is not None and not self.dataframe.empty:
             self._total_ticks = len(self.dataframe) - 1
             self.playback_slider.setRange(0, self._total_ticks)
-            self.tire_temp_widget.set_temp_range_from_dataframe(df)  # <-- Aquí está el cambio
+            self.tire_temp_widget.set_temp_range_from_dataframe(df)
+            self._max_rpm = df['RPM'].max() if 'RPM' in df else 1.0  # Evitar división por cero
         else:
             self._total_ticks = 0
             self.playback_slider.setRange(0, 0)
@@ -166,7 +168,11 @@ class PlaybackControlWidget(QWidget):
             brake = current_data_row.get('Brake', 0.0)
             throttle = current_data_row.get('Throttle', 0.0)
             steer_angle = -current_data_row.get('SteeringWheelAngle', 0.0)*180.0/ 3.141592653589793  # Convertir de radianes a grados
-            self.steering_widget.update_inputs(brake, throttle, steer_angle)
+            rpm = current_data_row.get('RPM', 0.0)
+            rpm_pct = rpm / self._max_rpm if self._max_rpm > 0 else 0.0
+            gear = current_data_row.get('Gear', 0)
+
+            self.steering_widget.update_inputs(brake, throttle, steer_angle, rpm_pct, gear)
 
             # Emitimos la señal para que otros widgets (como el mapa) puedan reaccionar
             self.tick_changed.emit(tick)
