@@ -105,6 +105,7 @@ class PlaybackControlWidget(QWidget):
             self.playback_slider.setRange(0, self._total_ticks)
             self.tire_temp_widget.set_temp_range_from_dataframe(df)
             self._max_rpm = df['RPM'].max() if 'RPM' in df else 1.0  # Evitar división por cero
+            self.g_force_widget.set_max_g(int(df['LatAccel'].max() / 9.81+1) if 'LatAccel' in df else 5.0)
         else:
             self._total_ticks = 0
             self.playback_slider.setRange(0, 0)
@@ -182,11 +183,11 @@ class PlaybackControlWidget(QWidget):
             self.steering_widget.update_inputs(brake, throttle, steer_angle, rpm_pct, gear)
 
             lat_accel = current_data_row.get('LatAccel', 0.0)
-            long_accel = current_data_row.get('LongAccel', 0.0)            
+            long_accel = -current_data_row.get('LongAccel', 0.0)            
             # Convertimos de m/s^2 a Gs
             lat_g = lat_accel / 9.81
             long_g = long_accel / 9.81
-            self.g_force_widget.update_g_forces(lat_g, long_g)
+            self.g_force_widget.update_g_forces(lat_g, long_g, current_data_row.get('Yaw', 0.0))
 
             # Emitimos la señal para que otros widgets (como el mapa) puedan reaccionar
             self.tick_changed.emit(tick)
