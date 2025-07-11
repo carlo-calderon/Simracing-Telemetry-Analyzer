@@ -12,12 +12,14 @@ from PySide6.QtCore import Qt, QRectF
 from matplotlib import cm
 import numpy as np
 import pandas as pd
+
 from RangeSlider import QRangeSlider
+from utils import resource_path
 
 class _CarCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.car_pixmap = QPixmap("./icons/formula_icon.jpeg")
+        self.car_pixmap = QPixmap(resource_path("./icons/formula_icon.jpeg"))
         if self.car_pixmap.isNull():
             print("ADVERTENCIA: No se pudo cargar la imagen del coche en './icons/formula_icon.jpeg'. Revisa la ruta.")
         

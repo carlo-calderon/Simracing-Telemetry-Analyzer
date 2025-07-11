@@ -22,6 +22,7 @@ from RangeSlider import QRangeSlider
 from TrackViewer import TrackWidget
 from LapsTimeTable import LapsTimeTable
 from PlaybackControlWidget import PlaybackControlWidget
+from utils import resource_path
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -81,7 +82,7 @@ class MainWindow(QMainWindow):
             self.file_menu.addAction(action)
 
         # Botón toggle para mostrar/ocultar fondo de mapa
-        self.show_map_action = QAction(QIcon("./icons/google_maps.png"), "Cargar fondo", self)
+        self.show_map_action = QAction(QIcon(resource_path("./icons/google_maps.png")), "Cargar fondo", self)
         self.show_map_action.setCheckable(True)
         self.show_map_action.setChecked(False)
         self.show_map_action.toggled.connect(self.on_toggle_map_background)
@@ -96,7 +97,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(self.reset_view_action)
 
         # Acción Guardar como
-        self.save_as_action = QAction(QIcon("./icons/save.ico"), "Guardar como CSV", self)
+        self.save_as_action = QAction(QIcon(resource_path("./icons/save.ico")), "Guardar como CSV", self)
         self.save_as_action.setToolTip("Guardar como CSV")
         self.save_as_action.triggered.connect(self.save_as_csv)
         self.toolbar.addAction(self.save_as_action)

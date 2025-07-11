@@ -19,6 +19,7 @@ from matplotlib import cm
 from GLTFModel import GLTFModel
 
 from TelemetrySession import TelemetrySession
+from utils import resource_path
 
 class TrackWidget(QOpenGLWidget):
     mouse_coord_changed = Signal(float, float)
@@ -109,7 +110,7 @@ class TrackWidget(QOpenGLWidget):
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        if self.car_model.load('./assets/formula/formula_car.glb', rotation_xyz_degrees=(90, -90, 0), base_scale=0.0005):
+        if self.car_model.load(resource_path('./assets/formula_car.glb'), rotation_xyz_degrees=(90, -90, 0), base_scale=0.0005):
             self.car_model.initGL()
 
     def resizeGL(self, w, h):

@@ -161,19 +161,5 @@ cython_debug/
 
 telemetry_data.csv
 *.csv
-telemetry_data.csv
-assets/formula/Box.glb
-assets/formula/Buggy.glb
-assets/formula/OrientationTest.glb
-assets/formula/ToyCar.glb
-assets/formula/scene.bin
-assets/formula/scene.gltf
-assets/formula/textures/MaterialStandart__Instance__1_baseColor.png
-assets/formula/textures/MaterialStandart__Instance__4_baseColor.png
-assets/formula/textures/MaterialStandart__Instance__8_baseColor.png
-assets/formula/textures/MaterialStandart__Instance__18_baseColor.png
-assets/formula/textures/MaterialStandart__Instance__23_baseColor.png
-assets/formula/textures/MaterialStandart__Instance__25_baseColor.png
-assets/formula/textures/MaterialStandart__Instance_baseColor.png
-assets/formula/formula_1.glb
-assets/formula/formula_car2.glb
+temp/
+icons/formula_icon.png

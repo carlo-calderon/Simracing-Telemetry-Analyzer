@@ -10,6 +10,8 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QProgressBar, Q
 from PySide6.QtGui import QPixmap, QTransform, QPainter
 from PySide6.QtCore import Qt
 
+from utils import resource_path
+
 # --- NUEVO WIDGET INTERNO SOLO PARA DIBUJAR EL VOLANTE ---
 class _SteeringWheelCanvas(QWidget):
     def __init__(self, pixmap, parent=None):
@@ -57,7 +59,7 @@ class SteeringInputWidget(QWidget):
         super().__init__(parent)
         
         # --- Cargar la imagen original del volante ---
-        original_steering_wheel_pixmap = QPixmap('./icons/steering_wheel.png')
+        original_steering_wheel_pixmap = QPixmap(resource_path('./icons/steering_wheel.png'))
         
         # --- Crear los widgets ---
         self.brake_bar = self._create_pedal_bar(is_brake=True)
