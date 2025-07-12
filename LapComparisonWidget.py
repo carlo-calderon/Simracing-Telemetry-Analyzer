@@ -128,10 +128,6 @@ class LapComparisonWidget(QWidget):
                             pen=pen,
                             name=lap_name
                             )
-
-                        print(f"Graficando {var_name} para {lap_name} con {len(lap_df)} puntos.")
-                        print(f"Rango de {var_name}: {lap_df[var_name].min()} a {lap_df[var_name].max()}, LapDist: {lap_df['LapDist'].min()} a {lap_df['LapDist'].max()}")
-                        print(f"Datos: {plot_df['LapDist'].to_numpy()[:5]}... {plot_df[var_name].to_numpy()[:5]}")
                         max_dist = max(max_dist, lap_df['LapDist'].max())
 
             plot_item.setXRange(0, max_dist, padding=0.01)
