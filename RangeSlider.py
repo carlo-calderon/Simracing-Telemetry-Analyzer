@@ -57,6 +57,11 @@ class QRangeSlider(QWidget):
         self._low_val = low
         self._high_val = high
         self.update()
+
+    def getLowValue(self):
+        return self._low_val
+    def getHighValue(self):
+        return self._high_val
         
     def set_edge_colors(self, min_color: QColor, max_color: QColor):
         """ Recibe los colores para pintar los extremos fuera de rango. """

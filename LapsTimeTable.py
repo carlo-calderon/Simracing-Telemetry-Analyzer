@@ -26,13 +26,13 @@ class LapsTimeTable(QWidget):
 
         self.on_sector_selected = None
         self.sector_percents = []
+        self.laps_df_ref = None 
 
     def _setup_ui(self):
         """ Configura la apariencia inicial y el estilo de la tabla. """
         self.table.setColumnCount(1) # Empezamos con 1, se ajustará con los datos
         self.table.setHorizontalHeaderLabels(["Vuelta"])
         
-        # --- ESTILO PROFESIONAL ---
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False) # Ocultar la cabecera vertical (números de fila)
         self.table.setAlternatingRowColors(True) # Habilitar colores de fila alternos
@@ -67,9 +67,8 @@ class LapsTimeTable(QWidget):
         """)
 
         self.table.horizontalHeader().sectionClicked.connect(self.on_header_clicked)
-        # --- NUEVO: Configuración de selección de filas ---
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         # Conectamos la señal de cambio de selección del modelo subyacente
         self.table.selectionModel().selectionChanged.connect(self.on_selection_changed)
 
@@ -90,8 +89,13 @@ class LapsTimeTable(QWidget):
 
     def update_data(self, laps_df: pd.DataFrame):
         """ Limpia la tabla y la llena con los datos del nuevo DataFrame. """
+        self.laps_df_ref = laps_df
+
+        self.table.blockSignals(True)
+
         if laps_df is None or laps_df.empty:
             self.table.setRowCount(0)
+            self.table.blockSignals(False)
             return
 
         self.table.setRowCount(laps_df.shape[0])
@@ -183,6 +187,7 @@ class LapsTimeTable(QWidget):
         # Ajustar el tamaño de las columnas al contenido
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.blockSignals(False)
 
     def on_header_clicked(self, logicalIndex):
         # Solo sectores (columna 2 en adelante, es decir, S1, S2, ...)
@@ -221,20 +226,20 @@ class LapsTimeTable(QWidget):
         selected_indexes = self.table.selectionModel().selectedRows()
 
         if not selected_indexes:
-            # No hay filas seleccionadas, emitimos None para borrar el filtro
             self.lap_filter_changed.emit(None)
             return
 
-        # Obtenemos la primera (y única) fila seleccionada
-        selected_row = selected_indexes[0].row()
-
-        # Ignorar la selección de la fila de tiempo teórico (la última)
-        if selected_row == self.table.rowCount() - 1:
-            self.table.clearSelection()
-            self.lap_filter_changed.emit(None)
-            return
-
-        lap_item = self.table.item(selected_row, 0) # El número de vuelta está en la columna 0
-        if lap_item:
-            lap_number = int(lap_item.text())
-            self.lap_filter_changed.emit(lap_number)
+        lap_numbers = []
+        if selected_indexes:
+            for index in selected_indexes:
+                # Ignorar la fila de vuelta teórica
+                if self.laps_df_ref is not None and index.row() >= len(self.laps_df_ref):
+                    continue
+                lap_item = self.table.item(index.row(), 0)
+                if lap_item:
+                    try:
+                        lap_numbers.append(int(lap_item.text()))
+                    except (ValueError, TypeError):
+                        pass # Ignorar si no es un número válido
+        
+        self.lap_filter_changed.emit(lap_numbers if lap_numbers else None)

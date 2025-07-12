@@ -22,6 +22,7 @@ from RangeSlider import QRangeSlider
 from TrackViewer import TrackWidget
 from LapsTimeTable import LapsTimeTable
 from PlaybackControlWidget import PlaybackControlWidget
+from LapComparisonWidget import LapComparisonWidget
 from utils import resource_path
 
 class MainWindow(QMainWindow):
@@ -32,7 +33,7 @@ class MainWindow(QMainWindow):
         self.session = None  # Inicializamos la sesión de telemetría
         self.ZOOM = 18  # Zoom por defecto para las teselas del mapa
 
-        self.selected_lap = None # Para filtrar por una vuelta específica
+        self.selected_laps = None # Para filtrar por una vuelta específica
         self.show_low_range = True
         self.show_high_range = True
 
@@ -45,7 +46,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(self.toolbar)
         self.color_combo = QComboBox(self)
         self.color_combo.setToolTip("Columna para colorear los puntos")
-        self.color_combo.setFixedWidth(180)  # <-- Ajusta el ancho aquí
+        self.color_combo.setFixedWidth(180) 
         self.color_combo.currentTextChanged.connect(self.on_color_column_changed)
         self.toolbar.addWidget(self.color_combo)
 
@@ -54,9 +55,9 @@ class MainWindow(QMainWindow):
         self.color_range_slider.setMinimumWidth(250)
         self.toolbar.addWidget(self.color_range_slider )
 
-        self.color_range_slider .rangeChanged.connect(self.on_range_changed)
-        self.color_range_slider .left_bar_clicked.connect(self.toggle_low_range_visibility)
-        self.color_range_slider .right_bar_clicked.connect(self.toggle_high_range_visibility)
+        self.color_range_slider.rangeChanged.connect(self.on_range_changed)
+        self.color_range_slider.left_bar_clicked.connect(self.toggle_low_range_visibility)
+        self.color_range_slider.right_bar_clicked.connect(self.toggle_high_range_visibility)
 
         # Configuración para archivos recientes
         self.settings = QSettings("CarcaldeF1", "SimracingTelemetryAnalyzer")
@@ -144,11 +145,20 @@ class MainWindow(QMainWindow):
         # Conectamos la señal del nuevo widget a un nuevo slot
         self.playback_widget.tick_changed.connect(self.on_playback_tick_changed)
 
+        # --- AÑADIMOS EL DOCK DEL GRÁFICO COMPARATIVO ---
+        self.comparison_widget = LapComparisonWidget(self)
+        comparison_dock = QDockWidget("Gráficos Comparativos", self)
+        comparison_dock.setWidget(self.comparison_widget)
+        self.addDockWidget(Qt.BottomDockWidgetArea, comparison_dock)
+
         self.update_recent_files_menu()
 
         self.laps_table_widget.sector_percents = [0.25, 0.5, 0.75]  # O la lista real usada
         self.laps_table_widget.on_sector_selected = self.set_distance_slider_range
+        
         self.laps_table_widget.lap_filter_changed.connect(self.on_lap_filter_changed)
+        self.laps_table_widget.lap_filter_changed.connect(self.on_lap_selection_for_chart_changed)
+        self.comparison_widget.plotted_variables_changed.connect(self.on_lap_selection_for_chart_changed)
 
     def toggle_low_range_visibility(self):
         self.show_low_range = not self.show_low_range
@@ -189,17 +199,18 @@ class MainWindow(QMainWindow):
                 numeric_cols = self.dataframe.select_dtypes(include=[np.number]).columns.tolist()
                 self.color_combo.clear()
                 self.color_combo.addItems(numeric_cols)
-
-                # Seleccionar 'Speed' si existe
                 if 'Speed' in numeric_cols:
                     self.color_combo.setCurrentText('Speed')
                 self.update_color_controls()
+
+                self.comparison_widget.populate_variables(numeric_cols)
+                self.update_comparison_charts()
 
                 # Actualizar la tabla de tiempos por vuelta
                 if self.session.laps_df is not None:
                     self.laps_table_widget.update_data(self.session.laps_df)
                     self.laps_table_widget.table.clearSelection() # Limpiar selección anterior
-                    self.selected_lap = None # Resetear el filtro de vuelta
+                    self.selected_laps = None # Resetear el filtro de vuelta
 
                 if 'LapDistPct' in self.dataframe.columns:
                     pct_min = self.dataframe['LapDistPct'].min()
@@ -265,11 +276,14 @@ class MainWindow(QMainWindow):
             # self.max_value_label.setText(f"Max: {high:.2f}")
             self.process_and_update_track()
 
-    def on_lap_filter_changed(self, lap_number):
+    def on_lap_filter_changed(self, selected_laps):
         """Slot para manejar la selección de vuelta desde la LapsTimeTable."""
-        print(f"INFO: Filtro de vuelta cambiado a: {lap_number}")
-        self.selected_lap = lap_number
+        print(f"INFO: Filtro de vuelta cambiado a: {selected_laps}")
+        self.selected_laps = selected_laps 
         self.process_and_update_track()
+
+    def on_lap_selection_for_chart_changed(self):
+        self.update_comparison_charts()
 
     def on_reset_view(self):
         """Slot para manejar la acción de resetear la vista."""
@@ -326,8 +340,8 @@ class MainWindow(QMainWindow):
             return
 
         # --- NUEVO: Filtrar por vuelta seleccionada ---
-        if self.selected_lap is not None:
-            df = self.dataframe[self.dataframe['Lap'] == self.selected_lap].copy()
+        if self.selected_laps is not None:
+            df = self.dataframe[self.dataframe['Lap'].isin(self.selected_laps)].copy()
         else:
             df = self.dataframe
 
@@ -337,10 +351,10 @@ class MainWindow(QMainWindow):
             self.track_widget.update()
             return
 
-        vmin = self.color_range_slider._low_val
-        vmax = self.color_range_slider._high_val
-        dist_min = self.distance_slider._low_val
-        dist_max = self.distance_slider._high_val
+        vmin = self.color_range_slider.getLowValue()
+        vmax = self.color_range_slider.getHighValue()
+        dist_min = self.distance_slider.getLowValue()
+        dist_max = self.distance_slider.getHighValue()
 
         pan_x, pan_y, zoom = self.track_widget.get_view_state()
         # 1. Preparar vértices y bounding box (esto está bien)
@@ -528,3 +542,42 @@ class MainWindow(QMainWindow):
                 yaw = data_row['Yaw']
                 # Llamamos a la nueva función en TrackWidget para actualizar la posición de la esfera
                 self.track_widget.set_current_point(lon, lat, yaw)
+
+    def update_comparison_charts(self):
+        if self.session is None or self.session.laps_df.empty:
+            return
+
+        # 1. Obtener vueltas seleccionadas de la tabla
+        selected_rows = self.laps_table_widget.table.selectionModel().selectedRows()
+        lap_numbers = []
+        if selected_rows:
+            for index in selected_rows:
+                if index.row() < len(self.session.laps_df): # Excluir vuelta teórica
+                    lap_item = self.laps_table_widget.table.item(index.row(), 0)
+                    if lap_item: lap_numbers.append(int(lap_item.text()))
+        
+        # 2. Si no hay vueltas seleccionadas, usamos la mejor vuelta
+        if not lap_numbers and not self.session.laps_df.empty:
+            best_lap_row = self.session.laps_df.loc[self.session.laps_df['Time'].idxmin()]
+            lap_numbers.append(int(best_lap_row['Lap']))
+
+        # 3. Preparar los datos de las vueltas
+        laps_to_plot_data = {}
+        for lap_num in lap_numbers:
+            lap_df = self.session.dataframe[self.session.dataframe['Lap'] == lap_num]
+            laps_to_plot_data[f'Vuelta {lap_num}'] = lap_df
+        
+        # Añadir la vuelta teórica si existe
+        if 'theoretical_lap' in self.session.laps_df.index:
+             laps_to_plot_data['Teórica'] = self.session.get_theoretical_best_lap_data()
+
+
+        # 4. Obtener variables a graficar
+        checked_vars = []
+        for i in range(self.comparison_widget.variable_list_widget.count()):
+            item = self.comparison_widget.variable_list_widget.item(i)
+            if item.checkState() == Qt.Checked:
+                checked_vars.append(item.text())
+
+        # 5. Llamar a la función de dibujado
+        self.comparison_widget.update_plots(laps_to_plot_data, checked_vars)
