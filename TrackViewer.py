@@ -110,7 +110,9 @@ class TrackWidget(QOpenGLWidget):
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        if self.car_model.load(resource_path('./assets/formula_car.glb'), rotation_xyz_degrees=(90, -90, 0), base_scale=0.0005):
+        asset_filename = resource_path('./assets/formula_car.glb')
+        #asset_filename = resource_path('./assets/scene.gltf')
+        if self.car_model.load(asset_filename, rotation_xyz_degrees=(90, -90, 0), base_scale=0.0005):
             self.car_model.initGL()
 
     def resizeGL(self, w, h):
@@ -216,21 +218,12 @@ class TrackWidget(QOpenGLWidget):
             self.car_model.draw()
             glPopMatrix()
 
-            # # Hacemos el punto más grande y de un color brillante para que destaque
-            # glPushMatrix()
-            # glPointSize(self.point_size_marker)
-            # glBegin(GL_POINTS)
-            # glColor4f(1.0, 0.3, 0.3, 1.0) # Un color cian brillante
-            # glVertex2f(self.current_point_pos[0], self.current_point_pos[1])
-            # glEnd()
-            # glPointSize(self.point_size_normal)
-            # glPopMatrix()
-
     def draw_background_map(self):
         """ Dibuja un rectángulo con la textura del mapa. """
         if self.map_texture_id is None or self.map_bbox  is None:
             return
 
+        glEnable(GL_TEXTURE_2D)
         glColor4f(1.0, 1.0, 1.0, 1.0) # Color blanco para no teñir la textura
         glBindTexture(GL_TEXTURE_2D, self.map_texture_id)
         
@@ -245,6 +238,7 @@ class TrackWidget(QOpenGLWidget):
         glEnd()
 
         glBindTexture(GL_TEXTURE_2D, 0)
+        glDisable(GL_TEXTURE_2D)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
