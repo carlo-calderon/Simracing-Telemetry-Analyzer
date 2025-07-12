@@ -73,14 +73,26 @@ class LapComparisonWidget(QWidget):
 
         # Generar una paleta de colores para las diferentes vueltas
         colors = ['#FF5733', '#33FF57', '#3357FF', '#FF33A1', '#A133FF', '#33FFA1']
+        fixed_ranges = {
+            'Throttle': (0.0, 1.05),
+            'Brake': (0.0, 1.05),
+            'Speed': (0.0, 100.0),
+        }
+
+        linked_x_plot = None
+        max_dist = 1.0
 
         for i, var_name in enumerate(variables_to_plot):
             plot_item = self.graphics_layout_widget.addPlot(row=i, col=0)
+
             plot_item.setLabel('left', var_name)
-            plot_item.setLabel('bottom', 'Distancia (m)')
+            if i == len(variables_to_plot) - 1:
+                plot_item.setLabel('bottom', 'Distancia (m)')
             plot_item.showGrid(x=True, y=True, alpha=0.3)
-            
             legend = plot_item.addLegend()
+            
+            if linked_x_plot:
+                plot_item.setXLink(linked_x_plot)
             
             for j, (lap_name, lap_df) in enumerate(laps_data.items()):
                 if lap_name == 'Teórica':
@@ -91,5 +103,18 @@ class LapComparisonWidget(QWidget):
                 if 'LapDist' in lap_df and var_name in lap_df:
                     plot_item.plot(lap_df['LapDist'].to_numpy(), lap_df[var_name].to_numpy(), pen=pen, name=lap_name)
                     print(f"Graficando {var_name} para {lap_name} con {len(lap_df)} puntos.")
+                    print(f"Rango de {var_name}: {lap_df[var_name].min()} a {lap_df[var_name].max()}, LapDist: {lap_df['LapDist'].min()} a {lap_df['LapDist'].max()}")
+                    max_dist = max(max_dist, lap_df['LapDist'].max())
 
-            plot_item.getViewBox().disableAutoRange()
+            if var_name in fixed_ranges:
+                # Si la variable está en nuestro diccionario, fijamos el rango Y
+                min_y, max_y = fixed_ranges[var_name]
+                plot_item.setYRange(min_y, max_y, padding=0)
+                plot_item.setXRange(0, max_dist, padding=0)
+                plot_item.getViewBox().disableAutoRange()
+            else:
+                # Si no, usamos el ciclo de auto-range controlado que ya teníamos
+                plot_item.getViewBox().enableAutoRange(axis=pg.ViewBox.YAxis)
+                plot_item.getViewBox().disableAutoRange()
+
+            linked_x_plot = plot_item

@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         laps_dock_widget = QDockWidget("Tiempos por Vuelta", self)
         laps_dock_widget.setWidget(dock_container_widget)
         laps_dock_widget.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.addDockWidget(Qt.RightDockWidgetArea, laps_dock_widget)
+        self.addDockWidget(Qt.LeftDockWidgetArea, laps_dock_widget)
 
         # --- AÑADIMOS EL NUEVO DOCK DE REPRODUCCIÓN ---
         self.playback_widget = PlaybackControlWidget(self)
