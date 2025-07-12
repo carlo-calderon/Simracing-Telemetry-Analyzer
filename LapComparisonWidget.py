@@ -73,14 +73,33 @@ class LapComparisonWidget(QWidget):
 
         # Generar una paleta de colores para las diferentes vueltas
         colors = ['#FF5733', '#33FF57', '#3357FF', '#FF33A1', '#A133FF', '#33FFA1']
-        fixed_ranges = {
+        fixed_y_ranges = {
             'Throttle': (0.0, 1.05),
             'Brake': (0.0, 1.05),
             'Speed': (0.0, 100.0),
         }
 
         linked_x_plot = None
-        max_dist = 1.0
+        max_dist = 0.0
+        y_ranges = {}
+        if laps_data:
+            # Encontrar la distancia máxima en todas las vueltas a graficar
+            for lap_df in laps_data.values():
+                if 'LapDist' in lap_df and not lap_df.empty:
+                    max_dist = max(max_dist, lap_df['LapDist'].max())
+            
+            # Calcular los rangos Y para cada variable que no tenga un rango fijo
+            for var_name in variables_to_plot:
+                if var_name not in fixed_y_ranges:
+                    min_val, max_val = np.inf, -np.inf
+                    for lap_df in laps_data.values():
+                        if var_name in lap_df and not lap_df.empty:
+                            min_val = min(min_val, lap_df[var_name].min())
+                            max_val = max(max_val, lap_df[var_name].max())
+                    
+                    # Añadir un pequeño padding para que no quede pegado
+                    padding = (max_val - min_val) * 0.05 if max_val > min_val else 1
+                    y_ranges[var_name] = (min_val - padding, max_val + padding)
 
         for i, var_name in enumerate(variables_to_plot):
             plot_item = self.graphics_layout_widget.addPlot(row=i, col=0)
@@ -95,26 +114,33 @@ class LapComparisonWidget(QWidget):
                 plot_item.setXLink(linked_x_plot)
             
             for j, (lap_name, lap_df) in enumerate(laps_data.items()):
-                if lap_name == 'Teórica':
-                    pen = pg.mkPen(color='#FFFFFF', width=2, style=Qt.DashLine)
-                else:
-                    pen = pg.mkPen(color=colors[j % len(colors)], width=2)
+                pen_style = Qt.DashLine if lap_name == 'Teórica' else Qt.SolidLine
+                pen_color = '#FFFFFF' if lap_name == 'Teórica' else colors[j % len(colors)]
+                pen = pg.mkPen(color=pen_color, width=2, style=pen_style)
                 
                 if 'LapDist' in lap_df and var_name in lap_df:
-                    plot_item.plot(lap_df['LapDist'].to_numpy(), lap_df[var_name].to_numpy(), pen=pen, name=lap_name)
-                    print(f"Graficando {var_name} para {lap_name} con {len(lap_df)} puntos.")
-                    print(f"Rango de {var_name}: {lap_df[var_name].min()} a {lap_df[var_name].max()}, LapDist: {lap_df['LapDist'].min()} a {lap_df['LapDist'].max()}")
-                    max_dist = max(max_dist, lap_df['LapDist'].max())
+                    # Elimina NaN y ordena por LapDist
+                    plot_df = lap_df[['LapDist', var_name]].dropna().sort_values('LapDist')
+                    if not plot_df.empty:
+                        plot_item.plot(
+                            x=plot_df['LapDist'].to_numpy(), 
+                            y=plot_df[var_name].to_numpy(), 
+                            pen=pen,
+                            name=lap_name
+                            )
 
-            if var_name in fixed_ranges:
-                # Si la variable está en nuestro diccionario, fijamos el rango Y
-                min_y, max_y = fixed_ranges[var_name]
+                        print(f"Graficando {var_name} para {lap_name} con {len(lap_df)} puntos.")
+                        print(f"Rango de {var_name}: {lap_df[var_name].min()} a {lap_df[var_name].max()}, LapDist: {lap_df['LapDist'].min()} a {lap_df['LapDist'].max()}")
+                        print(f"Datos: {plot_df['LapDist'].to_numpy()[:5]}... {plot_df[var_name].to_numpy()[:5]}")
+                        max_dist = max(max_dist, lap_df['LapDist'].max())
+
+            plot_item.setXRange(0, max_dist, padding=0.01)
+
+            if var_name in fixed_y_ranges:
+                min_y, max_y = fixed_y_ranges[var_name]
                 plot_item.setYRange(min_y, max_y, padding=0)
-                plot_item.setXRange(0, max_dist, padding=0)
-                plot_item.getViewBox().disableAutoRange()
-            else:
-                # Si no, usamos el ciclo de auto-range controlado que ya teníamos
-                plot_item.getViewBox().enableAutoRange(axis=pg.ViewBox.YAxis)
-                plot_item.getViewBox().disableAutoRange()
+            elif var_name in y_ranges:
+                min_y, max_y = y_ranges[var_name]
+                plot_item.setYRange(min_y, max_y, padding=0)
 
             linked_x_plot = plot_item
