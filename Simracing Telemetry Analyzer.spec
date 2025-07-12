@@ -5,7 +5,11 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    # Agrega los directorios 'icons' y 'assets' completos como datos
+    datas=[
+        ('icons/*', 'icons'),
+        ('assets/*', 'assets'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
